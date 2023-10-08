@@ -30,32 +30,36 @@ impl Index for usize {
 }
 
 macro_rules! node {
-    ($self:expr, $index:expr) => {
-        $self.nodes[unsafe { $index.unwrap_unchecked() }]
+    ($self:ident, $index:expr) => {
+        unsafe { $self.nodes.get_unchecked($index) }
+    };
+}
+
+macro_rules! node_mut {
+    ($self:ident, $index:expr) => {
+        unsafe { $self.nodes.get_unchecked_mut($index) }
     };
 }
 
 #[derive(Debug)]
 struct Node<T: Float> {
-    // vertex index in coordinates array
+    /// vertex index in coordinates array
     i: usize,
-
-    // vertex coordinates
+    /// vertex coordinates x
     x: T,
+    /// vertex coordinates y
     y: T,
-
-    // previous and next vertex nodes in a polygon ring
-    prev_i: Option<usize>,
-    next_i: Option<usize>,
-
-    // z-order curve value
+    /// previous vertex nodes in a polygon ring
+    prev_i: usize,
+    /// next vertex nodes in a polygon ring
+    next_i: usize,
+    /// z-order curve value
     z: u32,
-
-    // previous and next nodes in z-order
+    /// previous nodes in z-order
     prev_z_i: Option<usize>,
+    /// next nodes in z-order
     next_z_i: Option<usize>,
-
-    // indicates whether this is a steiner point
+    /// indicates whether this is a steiner point
     steiner: bool,
 }
 
@@ -65,8 +69,8 @@ impl<T: Float> Node<T> {
             i,
             x,
             y,
-            prev_i: None,
-            next_i: None,
+            prev_i: 0,
+            next_i: 0,
             z: 0,
             prev_z_i: None,
             next_z_i: None,
@@ -74,22 +78,19 @@ impl<T: Float> Node<T> {
         }
     }
 }
+
+#[derive(Debug)]
 pub struct Earcut<T: Float> {
     nodes: Vec<Node<T>>,
-}
-
-#[inline]
-fn sign<T: Float>(num: T) -> i32 {
-    match num {
-        v if v > T::zero() => 1,
-        v if v < T::zero() => -1,
-        _ => 0,
-    }
+    queue: Vec<usize>,
 }
 
 impl<T: Float> Earcut<T> {
     pub fn new() -> Self {
-        Self { nodes: Vec::new() }
+        Self {
+            nodes: Vec::new(),
+            queue: Vec::new(),
+        }
     }
 
     fn reset(&mut self, capacity: usize) {
@@ -117,7 +118,7 @@ impl<T: Float> Earcut<T> {
             return;
         };
 
-        let outer_node = &self.nodes[outer_node_i];
+        let outer_node = node!(self, outer_node_i);
         if outer_node.next_i == outer_node.prev_i {
             return;
         }
@@ -156,15 +157,7 @@ impl<T: Float> Earcut<T> {
             }
         }
 
-        self.earcut_linked(
-            Some(outer_node_i),
-            triangles_out,
-            dim,
-            min_x,
-            min_y,
-            inv_size,
-            0,
-        );
+        self.earcut_linked(outer_node_i, triangles_out, dim, min_x, min_y, inv_size, 0);
     }
 
     /// create a circular doubly linked list from polygon points in the specified winding order
@@ -177,26 +170,36 @@ impl<T: Float> Earcut<T> {
         clockwise: bool,
     ) -> Option<usize> {
         let mut last_i: Option<usize> = None;
+        if start >= end {
+            return None;
+        }
 
         if clockwise == (signed_area(data, start, end, dim) > T::zero()) {
-            for (i, w) in data[start..end].windows(2).enumerate().step_by(dim) {
-                if let [x, y] = *w {
-                    last_i = Some(self.insert_node((start + i) as usize, x, y, last_i));
-                }
+            for (i, (x, y)) in data[start..end - 1]
+                .iter()
+                .step_by(dim)
+                .zip(data[(start + 1)..end].iter().step_by(dim))
+                .enumerate()
+            {
+                last_i = Some(self.insert_node(start + i * dim, *x, *y, last_i));
             }
         } else {
-            for (i, w) in data[start..end].windows(2).enumerate().step_by(dim).rev() {
-                if let [x, y] = *w {
-                    last_i = Some(self.insert_node((start + i) as usize, x, y, last_i));
-                }
+            for (i, (x, y)) in data[start..end - 1]
+                .iter()
+                .step_by(dim)
+                .zip(data[(start + 1)..end].iter().step_by(dim))
+                .enumerate()
+                .rev()
+            {
+                last_i = Some(self.insert_node(start + i * dim, *x, *y, last_i));
             }
         };
 
         if let Some(li) = last_i {
-            let last = &self.nodes[li];
-            if equals(last, &node!(self, last.next_i)) {
-                self.remove_node(li);
-                last_i = self.nodes[li].next_i;
+            let last = &node!(self, li);
+            if equals(last, node!(self, last.next_i)) {
+                let (_, next_i) = self.remove_node(li);
+                last_i = Some(next_i);
             }
         }
 
@@ -205,36 +208,33 @@ impl<T: Float> Earcut<T> {
 
     /// eliminate colinear or duplicate points
     fn filter_points(&mut self, start_i: usize, end_i: Option<usize>) -> usize {
-        let mut end_i = end_i.unwrap_or_else(|| start_i);
+        let mut end_i = end_i.unwrap_or(start_i);
+
         let mut p_i = start_i;
         loop {
-            let p = &self.nodes[p_i];
-            let p_next = &node!(self, p.next_i);
+            let p = node!(self, p_i);
+            let p_next = node!(self, p.next_i);
             if !p.steiner
-                && (equals(p, &p_next) || area(&node!(self, p.prev_i), p, &p_next).is_zero())
+                && (equals(p, &p_next) || area(node!(self, p.prev_i), p, &p_next).is_zero())
             {
-                self.remove_node(p_i);
-                let p = &self.nodes[p_i];
-                end_i = p.prev_i.unwrap();
-                p_i = end_i;
-                if p_i == p.next_i.unwrap() {
-                    break;
+                let (prev_i, next_i) = self.remove_node(p_i);
+                (p_i, end_i) = (prev_i, prev_i);
+                if p_i == next_i {
+                    return end_i;
                 }
             } else {
-                p_i = p.next_i.unwrap();
+                p_i = p.next_i;
                 if p_i == end_i {
-                    break;
+                    return end_i;
                 }
             };
         }
-
-        return end_i;
     }
 
     /// main ear slicing loop which triangulates a polygon (given as a linked list)
     fn earcut_linked<N: Index>(
         &mut self,
-        ear_i: Option<usize>,
+        ear_i: usize,
         triangles: &mut Vec<N>,
         dim: usize,
         min_x: T,
@@ -242,7 +242,7 @@ impl<T: Float> Earcut<T> {
         inv_size: T,
         pass: usize,
     ) {
-        let Some(mut ear_i) = ear_i else { return };
+        let mut ear_i = ear_i;
 
         // interlink polygon nodes in z-order
         if pass == 0 && inv_size != T::zero() {
@@ -252,9 +252,10 @@ impl<T: Float> Earcut<T> {
         let mut stop_i = ear_i;
 
         // iterate through ears, slicing them one by one
-        while self.nodes[ear_i].prev_i != self.nodes[ear_i].next_i {
-            let prev_i = self.nodes[ear_i].prev_i.unwrap();
-            let next_i = self.nodes[ear_i].next_i.unwrap();
+        while node!(self, ear_i).prev_i != node!(self, ear_i).next_i {
+            let ear = node!(self, ear_i);
+            let prev_i = ear.prev_i;
+            let next_i = ear.next_i;
 
             let is_ear = if inv_size != T::zero() {
                 self.is_ear_hashed(ear_i, min_x, min_y, inv_size)
@@ -262,18 +263,16 @@ impl<T: Float> Earcut<T> {
                 self.is_ear(ear_i)
             };
             if is_ear {
-                let ear = &self.nodes[ear_i];
                 // cut off the triangle
-                triangles.push(N::from(self.nodes[prev_i].i / dim));
+                triangles.push(N::from(node!(self, prev_i).i / dim));
                 triangles.push(N::from(ear.i / dim));
-                triangles.push(N::from(self.nodes[next_i].i / dim));
+                triangles.push(N::from(node!(self, next_i).i / dim));
 
                 self.remove_node(ear_i);
 
                 // skipping the next vertex leads to less sliver triangles
-                let next_next_i = self.nodes[next_i].next_i.unwrap();
-                ear_i = next_next_i;
-                stop_i = next_next_i;
+                let next_next_i = node!(self, next_i).next_i;
+                (ear_i, stop_i) = (next_next_i, next_next_i);
 
                 continue;
             }
@@ -282,30 +281,30 @@ impl<T: Float> Earcut<T> {
 
             // if we looped through the whole remaining polygon and can't find any more ears
             if ear_i == stop_i {
-                // try filtering points and slicing again
                 if pass == 0 {
-                    let eee_i = Some(self.filter_points(ear_i, None));
-                    self.earcut_linked(eee_i, triangles, dim, min_x, min_y, inv_size, 1);
-                // if this didn't work, try curing all small self-intersections locally
+                    // try filtering points and slicing again
+                    ear_i = self.filter_points(ear_i, None);
+                    self.earcut_linked(ear_i, triangles, dim, min_x, min_y, inv_size, 1);
                 } else if pass == 1 {
+                    // if this didn't work, try curing all small self-intersections locally
                     let filtered = self.filter_points(ear_i, None);
-                    let ear_i = self.cure_local_intersections(filtered, triangles, dim);
-                    self.earcut_linked(Some(ear_i), triangles, dim, min_x, min_y, inv_size, 2);
-                // as a last resort, try splitting the remaining polygon into two
+                    ear_i = self.cure_local_intersections(filtered, triangles, dim);
+                    self.earcut_linked(ear_i, triangles, dim, min_x, min_y, inv_size, 2);
                 } else if pass == 2 {
+                    // as a last resort, try splitting the remaining polygon into two
                     self.split_earcut(ear_i, triangles, dim, min_x, min_y, inv_size);
                 }
-
-                break;
+                return;
             }
         }
     }
 
     /// check whether a polygon node forms a valid ear with adjacent nodes
+    #[inline]
     fn is_ear(&self, ear_i: usize) -> bool {
-        let b = &self.nodes[ear_i];
-        let a = &node!(self, b.prev_i);
-        let c = &node!(self, b.next_i);
+        let b = node!(self, ear_i);
+        let a = node!(self, b.prev_i);
+        let c = node!(self, b.next_i);
 
         if area(a, b, c) >= T::zero() {
             // reflex, can't be an ear
@@ -320,26 +319,26 @@ impl<T: Float> Earcut<T> {
         let x1 = a.x.max(b.x.max(c.x));
         let y1 = a.y.max(b.y.max(c.y));
 
-        let mut p = &node!(self, c.next_i);
-        let mut p_prev = &node!(self, p.prev_i);
+        let mut p = node!(self, c.next_i);
+        let mut p_prev = node!(self, p.prev_i);
         while !std::ptr::eq(p, a) {
-            let p_next = &node!(self, p.next_i);
+            let p_next = node!(self, p.next_i);
             if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1)
                 && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y)
                 && area(p_prev, p, p_next) >= T::zero()
             {
                 return false;
             }
-            p_prev = p;
-            p = p_next;
+            (p_prev, p) = (p, p_next);
         }
         return true;
     }
 
+    #[inline]
     fn is_ear_hashed(&self, ear_i: usize, min_x: T, min_y: T, inv_size: T) -> bool {
-        let b = &self.nodes[ear_i];
-        let a = &node!(self, b.prev_i);
-        let c = &node!(self, b.next_i);
+        let b = node!(self, ear_i);
+        let a = node!(self, b.prev_i);
+        let c = node!(self, b.next_i);
 
         if area(a, b, c) >= T::zero() {
             // reflex, can't be an ear
@@ -356,41 +355,41 @@ impl<T: Float> Earcut<T> {
         let min_z = z_order(x0, y0, min_x, min_y, inv_size);
         let max_z = z_order(x1, y1, min_x, min_y, inv_size);
 
-        let ear = &self.nodes[ear_i];
-        let mut o_p = ear.prev_z_i.and_then(|i| Some(&self.nodes[i]));
-        let mut o_n = ear.next_z_i.and_then(|i| Some(&self.nodes[i]));
+        let ear = node!(self, ear_i);
+        let mut o_p = ear.prev_z_i.and_then(|i| Some(node!(self, i)));
+        let mut o_n = ear.next_z_i.and_then(|i| Some(node!(self, i)));
 
-        let ear_prev = &node!(self, ear.prev_i);
-        let ear_next = &node!(self, ear.next_i);
+        let ear_prev = node!(self, ear.prev_i);
+        let ear_next = node!(self, ear.next_i);
 
         // look for points inside the triangle in both directions
         loop {
             let Some(p) = o_p else { break };
-            let Some(n) = o_n else { break };
-            if !(p.z < min_z) {
+            if !(p.z >= min_z) {
                 break;
             };
-            if !(n.z > max_z) {
+            let Some(n) = o_n else { break };
+            if !(n.z <= max_z) {
                 break;
             };
 
             if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1)
                 && (!std::ptr::eq(p, a) && !std::ptr::eq(p, c))
                 && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y)
-                && area(&node!(self, p.prev_i), p, &node!(self, p.next_i)) >= T::zero()
+                && area(node!(self, p.prev_i), p, node!(self, p.next_i)) >= T::zero()
             {
                 return false;
             }
-            o_p = p.prev_z_i.and_then(|i| Some(&self.nodes[i]));
+            o_p = p.prev_z_i.and_then(|i| Some(node!(self, i)));
 
             if (n.x >= x0 && n.x <= x1 && n.y >= y0 && n.y <= y1)
                 && (!std::ptr::eq(n, a) && !std::ptr::eq(n, c))
                 && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, n.x, n.y)
-                && area(&node!(self, n.prev_i), n, &node!(self, n.next_i)) >= T::zero()
+                && area(node!(self, n.prev_i), n, node!(self, n.next_i)) >= T::zero()
             {
                 return false;
             }
-            o_n = p.next_z_i.and_then(|i| Some(&self.nodes[i]));
+            o_n = p.next_z_i.and_then(|i| Some(node!(self, i)));
         }
 
         // look for remaining points in decreasing z-order
@@ -400,11 +399,11 @@ impl<T: Float> Earcut<T> {
             };
             if (!std::ptr::eq(p, ear_prev) && !std::ptr::eq(p, ear_next))
                 && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y)
-                && area(&node!(self, p.prev_i), p, &node!(self, p.next_i)) >= T::zero()
+                && area(node!(self, p.prev_i), p, node!(self, p.next_i)) >= T::zero()
             {
                 return false;
             }
-            o_p = p.prev_z_i.and_then(|i| Some(&self.nodes[i]));
+            o_p = p.prev_z_i.and_then(|i| Some(node!(self, i)));
         }
 
         // look for remaining points in increasing z-order
@@ -414,11 +413,11 @@ impl<T: Float> Earcut<T> {
             };
             if (!std::ptr::eq(n, ear_prev) && !std::ptr::eq(n, ear_next))
                 && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, n.x, n.y)
-                && area(&node!(self, n.prev_i), n, &node!(self, n.next_i)) >= T::zero()
+                && area(node!(self, n.prev_i), n, node!(self, n.next_i)) >= T::zero()
             {
                 return false;
             }
-            o_n = n.next_z_i.and_then(|i| Some(&self.nodes[i]));
+            o_n = n.next_z_i.and_then(|i| Some(node!(self, i)));
         }
 
         return true;
@@ -433,17 +432,14 @@ impl<T: Float> Earcut<T> {
     ) -> usize {
         let mut p_i = start_i;
         loop {
-            let Node {
-                prev_i: p_prev_i,
-                next_i: p_next_i,
-                ..
-            } = self.nodes[p_i];
-            let a_i = p_prev_i.unwrap();
-            let p_next = &node!(self, p_next_i);
-            let b_i = p_next.next_i.unwrap();
-            let a = &self.nodes[a_i];
-            let b = &self.nodes[b_i];
-            let p = &self.nodes[p_i];
+            let p_prev_i = node!(self, p_i).prev_i;
+            let p_next_i = node!(self, p_i).next_i;
+            let a_i = p_prev_i;
+            let p_next = node!(self, p_next_i);
+            let b_i = p_next.next_i;
+            let a = node!(self, a_i);
+            let b = node!(self, b_i);
+            let p = node!(self, p_i);
 
             if !equals(a, b)
                 && self.intersects(a, p, p_next, b)
@@ -455,19 +451,16 @@ impl<T: Float> Earcut<T> {
                 triangles.push(N::from(b.i / dim));
 
                 self.remove_node(p_i);
-                self.remove_node(p_next_i.unwrap());
+                self.remove_node(p_next_i);
 
-                start_i = b_i;
-                p_i = start_i;
+                (p_i, start_i) = (b_i, b_i);
             }
 
-            p_i = self.nodes[p_i].next_i.unwrap();
+            p_i = node!(self, p_i).next_i;
             if p_i == start_i {
-                break;
+                return self.filter_points(p_i, None);
             }
         }
-
-        return self.filter_points(p_i, None);
     }
 
     /// try splitting polygon into two and triangulate them independently
@@ -483,34 +476,32 @@ impl<T: Float> Earcut<T> {
         // look for a valid diagonal that divides the polygon into two
         let mut a_i = start_i;
         loop {
-            let Node {
-                i: ai,
-                prev_i: a_prev_i,
-                ..
-            } = self.nodes[a_i];
-            let mut b_i = (&node!(self, self.nodes[a_i].next_i)).next_i.unwrap();
+            let ai = node!(self, a_i).i;
+            let a_prev_i = node!(self, a_i).prev_i;
+            let a_next_i = node!(self, a_i).next_i;
+            let mut b_i = (node!(self, a_next_i)).next_i;
 
-            while b_i != a_prev_i.unwrap() {
-                let b = &self.nodes[b_i];
-                if ai != b.i && self.is_valid_diagonal(&self.nodes[a_i], b) {
+            while b_i != a_prev_i {
+                let b = node!(self, b_i);
+                if ai != b.i && self.is_valid_diagonal(node!(self, a_i), b) {
                     // split the polygon in two by the diagonal
                     let mut c_i = self.split_polygon(a_i, b_i);
 
                     // filter colinear points around the cuts
-                    a_i = self.filter_points(a_i, Some(self.nodes[a_i].next_i.unwrap()));
-                    c_i = self.filter_points(c_i, self.nodes[c_i].next_i);
+                    a_i = self.filter_points(a_i, Some(node!(self, a_i).next_i));
+                    c_i = self.filter_points(c_i, Some(node!(self, c_i).next_i));
 
                     // run earcut on each half
-                    self.earcut_linked(Some(a_i), triangles, dim, min_x, min_y, inv_size, 0);
-                    self.earcut_linked(Some(c_i), triangles, dim, min_x, min_y, inv_size, 0);
+                    self.earcut_linked(a_i, triangles, dim, min_x, min_y, inv_size, 0);
+                    self.earcut_linked(c_i, triangles, dim, min_x, min_y, inv_size, 0);
                     return;
                 }
-                b_i = b.next_i.unwrap();
+                b_i = b.next_i;
             }
 
-            a_i = self.nodes[a_i].next_i.unwrap();
+            a_i = node!(self, a_i).next_i;
             if a_i == start_i {
-                break;
+                return;
             }
         }
     }
@@ -523,29 +514,34 @@ impl<T: Float> Earcut<T> {
         mut outer_node_i: usize,
         dim: usize,
     ) -> usize {
-        let mut queue = Vec::new();
+        self.queue.clear();
         let len = hole_indices.len();
-
         for (i, hi) in hole_indices.iter().enumerate() {
-            let start = (*hi).into() as usize * dim;
+            let start = (*hi).into() * dim;
             let end = if i < len - 1 {
                 hole_indices[i + 1].into() * dim
             } else {
                 data.len()
             };
             if let Some(list_i) = self.linked_list(data, start, end, dim, false) {
-                if list_i == self.nodes[list_i].next_i.unwrap() {
-                    self.nodes[list_i].steiner = true;
+                let list = &mut node_mut!(self, list_i);
+                if list_i == list.next_i {
+                    list.steiner = true;
                 }
-                queue.push(self.get_left_most(list_i))
+                self.queue.push(self.get_leftmost(list_i))
             }
         }
 
-        queue.sort_by(|a, b| self.nodes[*a].x.partial_cmp(&self.nodes[*b].x).unwrap());
+        self.queue.sort_unstable_by(|a, b| {
+            node!(self, *a)
+                .x
+                .partial_cmp(&node!(self, *b).x)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // process holes from left to right
-        for q_i in queue.into_iter() {
-            outer_node_i = self.eliminate_hole(q_i, outer_node_i);
+        for i in 0..self.queue.len() {
+            outer_node_i = self.eliminate_hole(self.queue[i], outer_node_i);
         }
 
         return outer_node_i;
@@ -553,17 +549,18 @@ impl<T: Float> Earcut<T> {
 
     /// find a bridge between vertices that connects hole with an outer ring and and link it
     fn eliminate_hole(&mut self, hole_i: usize, outer_node_i: usize) -> usize {
-        let Some(bridge_i) = self.find_hole_bridge(&self.nodes[hole_i], outer_node_i) else {
+        let Some(bridge_i) = self.find_hole_bridge(node!(self, hole_i), outer_node_i) else {
             return outer_node_i;
         };
         let bridge_reverse_i = self.split_polygon(bridge_i, hole_i);
 
         // filter collinear points around the cuts
-        self.filter_points(bridge_reverse_i, self.nodes[bridge_reverse_i].next_i);
-        return self.filter_points(bridge_i, self.nodes[bridge_i].next_i);
+        self.filter_points(bridge_reverse_i, Some(node!(self, bridge_reverse_i).next_i));
+        return self.filter_points(bridge_i, Some(node!(self, bridge_i).next_i));
     }
 
-    /// David Eberly's algorithm for finding a bridge between hole and outer polygon
+    /// dimavid Eberly's algorithm for finding a bridge between hole and outer polygon
+    #[inline]
     fn find_hole_bridge(&self, hole: &Node<T>, outer_node_i: usize) -> Option<usize> {
         let mut p_i = outer_node_i;
         let mut qx = T::neg_infinity();
@@ -572,9 +569,9 @@ impl<T: Float> Earcut<T> {
         // find a segment intersected by a ray from the hole's leftmost point to the left;
         // segment's endpoint with lesser x will be potential connection point
         loop {
-            let p = &self.nodes[p_i];
-            let p_next_i = p.next_i.unwrap();
-            let p_next = &self.nodes[p_next_i];
+            let p = node!(self, p_i);
+            let p_next_i = p.next_i;
+            let p_next = node!(self, p_next_i);
             if hole.y <= p.y && hole.y >= p_next.y && p_next.y != p.y {
                 let x = p.x + (hole.y - p.y) * (p_next.x - p.x) / (p_next.y - p.y);
                 if x <= hole.x && x > qx {
@@ -592,20 +589,18 @@ impl<T: Float> Earcut<T> {
             }
         }
 
-        let Some(mut m_i) = m_i else {
-            return None;
-        };
+        let Some(mut m_i) = m_i else { return None };
 
         // look for points inside the triangle of hole point, segment intersection and endpoint;
         // if there are no points found, we have a valid connection;
         // otherwise choose the point of the minimum angle with the ray as connection point
 
         let stop_i = m_i;
-        let Node { x: mx, y: my, .. } = self.nodes[m_i]; // must copy
+        let Node { x: mx, y: my, .. } = *node!(self, m_i); // must copy
         let mut tan_min = T::infinity();
 
         p_i = m_i;
-        let mut p = &self.nodes[p_i];
+        let mut p = node!(self, p_i);
         let mut m = p;
 
         loop {
@@ -627,170 +622,195 @@ impl<T: Float> Earcut<T> {
                         || (tan == tan_min
                             && (p.x > m.x || p.x == m.x && self.sector_contains_sector(m, p))))
                 {
-                    m_i = p_i;
-                    m = p;
+                    (m_i, m) = (p_i, p);
                     tan_min = tan;
                 }
             }
 
-            p_i = p.next_i.unwrap();
+            p_i = p.next_i;
             if p_i == stop_i {
-                break;
+                return Some(m_i);
             }
-            p = &self.nodes[p_i];
+            p = node!(self, p_i);
         }
-
-        return Some(m_i);
     }
 
     /// whether sector in vertex m contains sector in vertex p in the same coordinates
+    #[inline(always)]
     fn sector_contains_sector(&self, m: &Node<T>, p: &Node<T>) -> bool {
-        return area(&node!(self, m.prev_i), m, &node!(self, p.prev_i)) < T::zero()
-            && area(&node!(self, p.next_i), m, &node!(self, m.next_i)) < T::zero();
+        return area(node!(self, m.prev_i), m, node!(self, p.prev_i)) < T::zero()
+            && area(node!(self, p.next_i), m, node!(self, m.next_i)) < T::zero();
     }
 
     /// interlink polygon nodes in z-order
     fn index_curve(&mut self, start_i: usize, min_x: T, min_y: T, inv_size: T) {
         let mut p_i = start_i;
+
         loop {
-            let p = &mut self.nodes[p_i];
+            let p = node_mut!(self, p_i);
             if p.z == 0 {
                 p.z = z_order(p.x, p.y, min_x, min_y, inv_size);
             }
-            p.prev_z_i = p.prev_i;
-            p.next_z_i = p.next_i;
-            p_i = p.next_i.unwrap();
+            p.prev_z_i = Some(p.prev_i);
+            p.next_z_i = Some(p.next_i);
+            p_i = p.next_i;
             if p_i == start_i {
                 break;
             }
         }
 
-        let p_prev_z_i = self.nodes[p_i].prev_z_i.unwrap();
-        self.nodes[p_prev_z_i].next_z_i = None;
-        self.nodes[p_i].prev_z_i = None;
-
+        let p_prev_z_i = node!(self, p_i).prev_z_i.unwrap();
+        node_mut!(self, p_prev_z_i).next_z_i = None;
+        node_mut!(self, p_i).prev_z_i = None;
         self.sort_linked(p_i);
     }
 
     /// Simon Tatham's linked list merge sort algorithm
     /// http://www.chiark.greenend.org.uk/~sgtatham/algorithms/listsort.html
-    fn sort_linked(&mut self, _list: usize) {
-        let mut in_size = 1;
-        let mut _list = Option::Some(_list);
+    fn sort_linked(&mut self, list_i: usize) {
+        let mut in_size: usize = 1;
+        let mut list_i = Some(list_i);
 
         loop {
-            let mut p_i = _list;
-            _list = None;
+            let mut p_i = list_i;
+            list_i = None;
             let mut tail_i: Option<usize> = None;
             let mut num_merges = 0;
 
-            while p_i.is_some() {
+            while let Some(pp) = p_i {
                 num_merges += 1;
-                let mut q_i = p_i;
-                let mut p_size = 0;
-                for _ in 0..in_size {
-                    p_size += 1;
-                    q_i = node!(self, q_i).next_z_i;
-                    if q_i.is_none() {
+                let mut q_i = node!(self, pp).next_z_i;
+                let mut p_size: usize = 1;
+                for _ in 1..in_size {
+                    if let Some(i) = q_i {
+                        p_size += 1;
+                        q_i = node!(self, i).next_z_i;
+                    } else {
+                        q_i = None;
                         break;
                     }
                 }
                 let mut q_size = in_size;
 
-                while p_size > 0 || (q_size > 0 && q_i.is_some()) {
-                    let e_i = if p_size != 0
-                        && (q_size == 0
-                            || q_i.is_none()
-                            || &node!(self, p_i).z <= &node!(self, q_i).z)
-                    {
-                        let e_i = p_i.unwrap();
-                        p_i = node!(self, p_i).next_z_i;
-                        p_size -= 1;
-                        e_i
-                    } else {
-                        let e_i = q_i.unwrap();
-                        q_i = node!(self, q_i).next_z_i;
+                while p_size > 0 || (q_size > 0 && q_i != None) {
+                    let (e_i, e) = if p_size == 0 {
                         q_size -= 1;
-                        e_i
+                        let e_i = q_i.unwrap();
+                        let e = node_mut!(self, e_i);
+                        q_i = e.next_z_i;
+                        (e_i, e)
+                    } else if q_size == 0 {
+                        p_size -= 1;
+                        let e_i = p_i.unwrap();
+                        let e = node_mut!(self, e_i);
+                        p_i = e.next_z_i;
+                        (e_i, e)
+                    } else {
+                        let p_i_s = p_i.unwrap();
+                        if let Some(q_i_s) = q_i {
+                            if node!(self, p_i_s).z <= node!(self, q_i_s).z {
+                                p_size -= 1;
+                                let e_i = p_i_s;
+                                let e = node_mut!(self, p_i_s);
+                                p_i = e.next_z_i;
+                                (e_i, e)
+                            } else {
+                                q_size -= 1;
+                                let e_i = q_i_s;
+                                let e = node_mut!(self, q_i_s);
+                                q_i = e.next_z_i;
+                                (e_i, e)
+                            }
+                        } else {
+                            p_size -= 1;
+                            let e_i = p_i_s;
+                            let e = node_mut!(self, e_i);
+                            p_i = e.next_z_i;
+                            (e_i, e)
+                        }
                     };
 
-                    if tail_i.is_some() {
-                        (&mut node!(self, tail_i)).next_z_i = Some(e_i);
-                    } else {
-                        _list = Some(e_i);
-                    }
+                    e.prev_z_i = tail_i;
 
-                    self.nodes[e_i].prev_z_i = tail_i;
+                    if let Some(tail_i) = tail_i {
+                        node_mut!(self, tail_i).next_z_i = Some(e_i);
+                    } else {
+                        list_i = Some(e_i);
+                    }
                     tail_i = Some(e_i);
                 }
 
                 p_i = q_i;
             }
 
-            (&mut node!(self, tail_i)).next_z_i = None;
-            in_size *= 2;
-
+            node_mut!(self, tail_i.unwrap()).next_z_i = None;
             if num_merges <= 1 {
                 break;
             }
+            in_size *= 2;
         }
     }
 
     /// find the leftmost node of a polygon ring
-    fn get_left_most(&self, start_i: usize) -> usize {
+    #[inline(always)]
+    fn get_leftmost(&self, start_i: usize) -> usize {
         let mut p_i = start_i;
         let mut leftmost_i = start_i;
-        let mut p = &self.nodes[p_i];
+        let mut p = node!(self, p_i);
         let mut leftmost = p;
 
         loop {
             if p.x < leftmost.x || (p.x == leftmost.x && p.y < leftmost.y) {
                 (leftmost_i, leftmost) = (p_i, p);
             }
-            p_i = p.next_i.unwrap();
+            p_i = p.next_i;
             if p_i == start_i {
-                break;
+                return leftmost_i;
             }
-            p = &self.nodes[p_i];
+            p = node!(self, p_i);
         }
-        leftmost_i
     }
 
     /// check if a diagonal between two polygon nodes is valid (lies in polygon interior)
+    #[inline(always)]
     fn is_valid_diagonal(&self, a: &Node<T>, b: &Node<T>) -> bool {
-        let a_next = &node!(self, a.next_i);
-        let a_prev = &node!(self, a.prev_i);
-        let b_next = &node!(self, b.next_i);
-        let b_prev = &node!(self, b.prev_i);
-        (a_next.i != b.i && a_prev.i != b.i)
-            && !self.intersects_polygon(a, b)
-            && ((self.locally_inside(a, b) && self.locally_inside(b, a))
-                && self.middle_inside(a, b)
+        let a_next = node!(self, a.next_i);
+        let a_prev = node!(self, a.prev_i);
+        let b_next = node!(self, b.next_i);
+        let b_prev = node!(self, b.prev_i);
+        // dones't intersect other edges
+        (a_next.i != b.i && a_prev.i != b.i && !self.intersects_polygon(a, b))
+            // locally visible
+            && ((self.locally_inside(a, b) && self.locally_inside(b, a) && self.middle_inside(a, b))
+                // does not create opposite-facing sectors
                 && (area(a_prev, a, b_prev) != T::zero() || area(a, b_prev, b) != T::zero())
+                // special zero-length case
                 || equals(a, b)
                     && area(a_prev, a, a_next) > T::zero()
                     && area(b_prev, b, b_next) > T::zero())
     }
 
     /// check if two segments intersect
+    #[inline]
     fn intersects(&self, p1: &Node<T>, q1: &Node<T>, p2: &Node<T>, q2: &Node<T>) -> bool {
         let o1 = sign(area(p1, q1, p2));
         let o2 = sign(area(p1, q1, q2));
         let o3 = sign(area(p2, q2, p1));
         let o4 = sign(area(p2, q2, q1));
-        (o1 != o2 && o3 != o4)
-            || (o1 == 0 && on_segment(p1, p2, q1))
-            || (o2 == 0 && on_segment(p1, q2, q1))
-            || (o3 == 0 && on_segment(p2, p1, q2))
-            || (o4 == 0 && on_segment(p2, q1, q2))
+        (o1 != o2 && o3 != o4) // general case
+            || (o1 == 0 && on_segment(p1, p2, q1)) // p1, q1 and p2 are collinear and p2 lies on p1q1
+            || (o2 == 0 && on_segment(p1, q2, q1)) // p1, q1 and q2 are collinear and q2 lies on p1q1
+            || (o3 == 0 && on_segment(p2, p1, q2)) // p2, q2 and p1 are collinear and p1 lies on p2q2
+            || (o4 == 0 && on_segment(p2, q1, q2)) // p2, q2 and q1 are collinear and q1 lies on p2q2
     }
 
     /// check if a polygon diagonal intersects any polygon segments
+    #[inline(always)]
     fn intersects_polygon(&self, a: &Node<T>, b: &Node<T>) -> bool {
         let mut p = a;
         loop {
-            let p_next = &node!(self, p.next_i);
-            if (p.i != a.i && p_next.i != a.i && p.i != b.i && p_next.i != b.i)
+            let p_next = node!(self, p.next_i);
+            if (p.i != a.i && p.i != b.i && p_next.i != a.i && p_next.i != b.i)
                 && self.intersects(p, p_next, a, b)
             {
                 return true;
@@ -803,10 +823,10 @@ impl<T: Float> Earcut<T> {
     }
 
     /// check if a polygon diagonal is locally inside the polygon
-    #[inline]
+    #[inline(always)]
     fn locally_inside(&self, a: &Node<T>, b: &Node<T>) -> bool {
-        let a_prev = &node!(self, a.prev_i);
-        let a_next = &node!(self, a.next_i);
+        let a_prev = node!(self, a.prev_i);
+        let a_next = node!(self, a.next_i);
         if area(a_prev, a, a_next) < T::zero() {
             area(a, b, a_next) >= T::zero() && area(a, a_prev, b) >= T::zero()
         } else {
@@ -815,88 +835,91 @@ impl<T: Float> Earcut<T> {
     }
 
     /// check if the middle point of a polygon diagonal is inside the polygon
+    #[inline(always)]
     fn middle_inside(&self, a: &Node<T>, b: &Node<T>) -> bool {
         let mut p = a;
         let mut inside = false;
-        let two = T::from(2).unwrap();
-        let px = (a.x + b.x) / two;
-        let py = (a.y + b.y) / two;
+        let two = T::one() + T::one();
+        let (px, py) = ((a.x + b.x) / two, (a.y + b.y) / two);
         loop {
-            let p_next = &node!(self, p.next_i);
+            let p_next = node!(self, p.next_i);
             inside ^= (p.y > py) != (p_next.y > py)
                 && p_next.y != p.y
                 && (px < (p_next.x - p.x) * (py - p.y) / (p_next.y - p.y) + p.x);
             p = p_next;
             if std::ptr::eq(p, a) {
-                break;
+                return inside;
             }
         }
-        return inside;
     }
 
     /// link two polygon vertices with a bridge; if the vertices belong to the same ring, it splits polygon into two;
     /// if one belongs to the outer ring and another to a hole, it merges it into a single ring
+    #[inline(always)]
     fn split_polygon(&mut self, a_i: usize, b_i: usize) -> usize {
-        let a = &self.nodes[a_i];
         let a2_i = self.nodes.len();
-        self.nodes.push(Node::new(a.i, a.x, a.y));
+        let b2_i = a2_i + 1;
 
-        let b = &self.nodes[b_i];
-        let b2_i = self.nodes.len();
-        self.nodes.push(Node::new(b.i, b.x, b.y));
+        let a = node_mut!(self, a_i);
+        let mut a2 = Node::new(a.i, a.x, a.y);
+        let an_i = a.next_i;
+        a.next_i = b_i;
+        a2.prev_i = b2_i;
+        a2.next_i = an_i;
 
-        let an_i = self.nodes[a_i].next_i.unwrap();
-        let bp_i = self.nodes[b_i].prev_i.unwrap();
+        let b = node_mut!(self, b_i);
+        let mut b2 = Node::new(b.i, b.x, b.y);
+        let bp_i = b.prev_i;
+        b.prev_i = a_i;
+        b2.next_i = a2_i;
+        b2.prev_i = bp_i;
 
-        self.nodes[a_i].next_i = Some(b_i);
-        self.nodes[b_i].prev_i = Some(a_i);
-        self.nodes[a2_i].next_i = Some(an_i);
-        self.nodes[an_i].prev_i = Some(a2_i);
-        self.nodes[b2_i].next_i = Some(a2_i);
-        self.nodes[a2_i].prev_i = Some(b2_i);
-        self.nodes[bp_i].next_i = Some(b2_i);
-        self.nodes[b2_i].prev_i = Some(bp_i);
+        node_mut!(self, an_i).prev_i = a2_i;
+        node_mut!(self, bp_i).next_i = b2_i;
+
+        self.nodes.push(a2);
+        self.nodes.push(b2);
 
         return b2_i;
     }
 
     /// create a node and optionally link it with previous one (in a circular doubly linked list)
+    #[inline(always)]
     fn insert_node(&mut self, i: usize, x: T, y: T, last: Option<usize>) -> usize {
-        let p = Node::new(i, x, y);
+        let mut p = Node::new(i, x, y);
         let p_i = self.nodes.len();
-        self.nodes.push(p);
         match last {
             Some(last_i) => {
-                let last_next_i = self.nodes[last_i].next_i.unwrap();
-                self.nodes[p_i].next_i = Some(last_next_i);
-                self.nodes[p_i].prev_i = Some(last_i);
-                self.nodes[last_next_i].prev_i = Some(p_i);
-                self.nodes[last_i].next_i = Some(p_i);
+                let last_next_i = node!(self, last_i).next_i;
+                p.next_i = last_next_i;
+                p.prev_i = last_i;
+                node_mut!(self, last_next_i).prev_i = p_i;
+                node_mut!(self, last_i).next_i = p_i;
             }
             None => {
-                self.nodes[p_i].prev_i = Some(p_i);
-                self.nodes[p_i].next_i = Some(p_i);
+                (p.prev_i, p.next_i) = (p_i, p_i);
             }
         }
+        self.nodes.push(p);
         return p_i;
     }
 
-    #[inline]
-    fn remove_node(&mut self, p_i: usize) {
-        let p = &self.nodes[p_i];
-        let p_next_i = p.next_i.unwrap();
-        let p_prev_i = p.prev_i.unwrap();
+    #[inline(always)]
+    fn remove_node(&mut self, p_i: usize) -> (usize, usize) {
+        let p = node!(self, p_i);
+        let p_next_i = p.next_i;
+        let p_prev_i = p.prev_i;
         let p_next_z_i = p.next_z_i;
         let p_prev_z_i = p.prev_z_i;
-
-        self.nodes[p_next_i].prev_i = Some(p_prev_i);
-        self.nodes[p_prev_i].next_i = Some(p_next_i);
+        node_mut!(self, p_next_i).prev_i = p_prev_i;
+        node_mut!(self, p_prev_i).next_i = p_next_i;
         if let Some(prev_z_i) = p_prev_z_i {
-            self.nodes[prev_z_i].next_z_i = p_next_z_i;
+            node_mut!(self, prev_z_i).next_z_i = p_next_z_i;
         }
         if let Some(next_z_i) = p_next_z_i {
-            self.nodes[next_z_i].prev_z_i = p_prev_z_i;
+            node_mut!(self, next_z_i).prev_z_i = p_prev_z_i;
         }
+        return (p_prev_i, p_next_i);
     }
 }
 
@@ -927,30 +950,42 @@ pub fn deviation<T: Float, N: Index>(
     }
 
     let mut triangles_area = T::zero();
-    for i in (0..triangles.len()).step_by(3) {
-        let a = triangles[i].into() * dim;
-        let b = triangles[i + 1].into() * dim;
-        let c = triangles[i + 2].into() * dim;
+    let x = |v: &N| (*v).into() as usize * dim;
+    for ((a, b), c) in triangles
+        .iter()
+        .map(x)
+        .step_by(3) // 1
+        .zip(triangles.iter().skip(1).step_by(3).map(x))
+        .zip(triangles.iter().skip(2).step_by(3).map(x))
+    {
         triangles_area = triangles_area
             + ((data[a] - data[c]) * (data[b + 1] - data[a + 1])
                 - (data[a] - data[b]) * (data[c + 1] - data[a + 1]))
                 .abs();
     }
-
-    return if polygon_area == T::zero() && triangles_area == T::zero() {
+    if polygon_area == T::zero() && triangles_area == T::zero() {
         T::zero()
     } else {
         ((polygon_area - triangles_area) / polygon_area).abs()
-    };
+    }
 }
 
 /// check if a point lies within a convex triangle
 fn signed_area<T: Float>(data: &[T], start: usize, end: usize, dim: usize) -> T {
+    if start == end {
+        return T::zero();
+    }
+    let j = if end > dim { end - dim } else { 0 };
+    let mut bx = data[j];
+    let mut by = data[j + 1];
     let mut sum = T::zero();
-    let mut j = if end > dim { end - dim } else { 0 };
-    for i in (start..end).step_by(dim) {
-        sum = sum + (data[j] - data[i]) * (data[i + 1] + data[j + 1]);
-        j = i;
+    for (ax, ay) in data[start..end]
+        .iter()
+        .step_by(dim)
+        .zip(data[start + 1..end].iter().step_by(dim))
+    {
+        sum = sum + (bx - *ax) * (*ay + by);
+        (bx, by) = (*ax, *ay);
     }
     return sum;
 }
@@ -998,4 +1033,9 @@ fn on_segment<T: Float>(p: &Node<T>, q: &Node<T>, r: &Node<T>) -> bool {
         && q.x >= p.x.min(r.x)
         && q.y <= p.y.max(r.y)
         && q.y >= p.y.max(r.y);
+}
+
+#[inline]
+fn sign<T: Float>(v: T) -> i8 {
+    (v > T::zero()) as i8 - (v < T::zero()) as i8
 }

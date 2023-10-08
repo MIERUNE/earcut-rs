@@ -7,7 +7,7 @@ fn test_empty() {
     let hole_indices: &[u32] = &[];
     let dim = 2;
     let mut triangles = vec![];
-    earcut.earcut(data, hole_indices, dim, &mut triangles);
+    earcut.earcut(data, hole_indices, 2, &mut triangles);
     assert_eq!(triangles.len(), 0);
     assert_eq!(deviation(data, hole_indices, dim, &triangles), 0.0);
 }
@@ -49,7 +49,7 @@ fn test_invalid_empty_hole() {
 }
 
 #[test]
-fn test_invalid_point_hole() {
+fn test_steiner_point_hole() {
     let mut earcut = Earcut::new();
     let data = &[0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 50.0, 30.0];
     let hole_indices: &[u32] = &[3];
@@ -61,7 +61,7 @@ fn test_invalid_point_hole() {
 }
 
 #[test]
-fn test_invalid_line_hole() {
+fn test_steiner_line_hole() {
     let mut earcut = Earcut::new();
     let data = &[0., 0., 100., 0., 100., 100., 50., 30., 60., 30.];
     let hole_indices: &[u32] = &[3];
