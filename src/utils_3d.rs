@@ -106,7 +106,7 @@ mod test {
     fn test_invalid_input1() {
         let mut buf = Vec::new();
         let vertices = &[0., 0.];
-        project3d_to_2d(vertices, 9, &mut buf);
+        project3d_to_2d(vertices, 2, &mut buf);
     }
 
     #[test]
