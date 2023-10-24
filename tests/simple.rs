@@ -85,6 +85,28 @@ fn test_square() {
 }
 
 #[test]
+fn test_square_u16() {
+    let mut earcut = Earcut::new();
+    let data = &[0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0];
+    let hole_indices: &[u16] = &[];
+    let mut triangles = vec![];
+    earcut.earcut(data, hole_indices, 2, &mut triangles);
+    assert_eq!(triangles, vec![2, 3, 0, 0, 1, 2]);
+    assert_eq!(deviation(data, hole_indices, 2, &triangles), 0.0);
+}
+
+#[test]
+fn test_square_usize() {
+    let mut earcut = Earcut::new();
+    let data = &[0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0];
+    let hole_indices: &[usize] = &[];
+    let mut triangles = vec![];
+    earcut.earcut(data, hole_indices, 2, &mut triangles);
+    assert_eq!(triangles, vec![2, 3, 0, 0, 1, 2]);
+    assert_eq!(deviation(data, hole_indices, 2, &triangles), 0.0);
+}
+
+#[test]
 fn test_square_with_square_hole() {
     let mut earcut = Earcut::new();
     let data = &[

@@ -3,30 +3,30 @@ pub mod utils_3d;
 use num_traits::float::Float;
 
 pub trait Index: Copy {
-    fn into(self) -> usize;
-    fn from(v: usize) -> Self;
+    fn into_usize(self) -> usize;
+    fn from_usize(v: usize) -> Self;
 }
 impl Index for u32 {
-    fn into(self) -> usize {
+    fn into_usize(self) -> usize {
         self as usize
     }
-    fn from(v: usize) -> Self {
+    fn from_usize(v: usize) -> Self {
         v as Self
     }
 }
 impl Index for u16 {
-    fn into(self) -> usize {
+    fn into_usize(self) -> usize {
         self as usize
     }
-    fn from(v: usize) -> Self {
+    fn from_usize(v: usize) -> Self {
         v as Self
     }
 }
 impl Index for usize {
-    fn into(self) -> usize {
+    fn into_usize(self) -> usize {
         self as usize
     }
-    fn from(v: usize) -> Self {
+    fn from_usize(v: usize) -> Self {
         v as Self
     }
 }
@@ -43,7 +43,6 @@ macro_rules! node_mut {
     };
 }
 
-#[derive(Debug)]
 struct Node<T: Float> {
     /// vertex index in coordinates array
     i: usize,
@@ -81,7 +80,6 @@ impl<T: Float> Node<T> {
     }
 }
 
-#[derive(Debug)]
 pub struct Earcut<T: Float> {
     nodes: Vec<Node<T>>,
     queue: Vec<usize>,
@@ -112,7 +110,7 @@ impl<T: Float> Earcut<T> {
 
         let has_holes = hole_indices.len() > 0;
         let outer_len: usize = if has_holes {
-            hole_indices[0].into() * dim
+            hole_indices[0].into_usize() * dim
         } else {
             data.len()
         };
@@ -266,9 +264,9 @@ impl<T: Float> Earcut<T> {
             };
             if is_ear {
                 // cut off the triangle
-                triangles.push(N::from(node!(self, prev_i).i / dim));
-                triangles.push(N::from(ear.i / dim));
-                triangles.push(N::from(node!(self, next_i).i / dim));
+                triangles.push(N::from_usize(node!(self, prev_i).i / dim));
+                triangles.push(N::from_usize(ear.i / dim));
+                triangles.push(N::from_usize(node!(self, next_i).i / dim));
 
                 self.remove_node(ear_i);
 
@@ -448,9 +446,9 @@ impl<T: Float> Earcut<T> {
                 && self.locally_inside(a, b)
                 && self.locally_inside(b, a)
             {
-                triangles.push(N::from(a.i / dim));
-                triangles.push(N::from(p.i / dim));
-                triangles.push(N::from(b.i / dim));
+                triangles.push(N::from_usize(a.i / dim));
+                triangles.push(N::from_usize(p.i / dim));
+                triangles.push(N::from_usize(b.i / dim));
 
                 self.remove_node(p_i);
                 self.remove_node(p_next_i);
@@ -519,9 +517,9 @@ impl<T: Float> Earcut<T> {
         self.queue.clear();
         let len = hole_indices.len();
         for (i, hi) in hole_indices.iter().enumerate() {
-            let start = (*hi).into() * dim;
+            let start = (*hi).into_usize() * dim;
             let end = if i < len - 1 {
-                hole_indices[i + 1].into() * dim
+                hole_indices[i + 1].into_usize() * dim
             } else {
                 data.len()
             };
@@ -935,15 +933,15 @@ pub fn deviation<T: Float, N: Index>(
 ) -> T {
     let has_holes = hole_indices.len() > 0;
     let outer_len = match has_holes {
-        true => hole_indices[0].into() * dim,
+        true => hole_indices[0].into_usize() * dim,
         false => data.len(),
     };
     let mut polygon_area = signed_area(data, 0, outer_len, dim).abs();
     if has_holes {
         for i in 0..hole_indices.len() {
-            let start = hole_indices[i].into() * dim;
+            let start = hole_indices[i].into_usize() * dim;
             let end = if i < hole_indices.len() - 1 {
-                hole_indices[i + 1].into() * dim
+                hole_indices[i + 1].into_usize() * dim
             } else {
                 data.len()
             };
@@ -952,7 +950,7 @@ pub fn deviation<T: Float, N: Index>(
     }
 
     let mut triangles_area = T::zero();
-    let x = |v: &N| (*v).into() as usize * dim;
+    let x = |v: &N| (*v).into_usize() as usize * dim;
     for ((a, b), c) in triangles
         .iter()
         .map(x)

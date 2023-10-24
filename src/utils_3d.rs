@@ -8,7 +8,8 @@ fn cross<T: Float + Debug>((ax, ay, az): (T, T, T), (bx, by, bz): (T, T, T)) -> 
 
 fn normal<T: Float + Debug>(vertices: &[T]) -> Option<(T, T, T)> {
     let len = vertices.len();
-    if len < 3 {
+    if len < 9 {
+        // At least 3 vertices required
         return None;
     }
     let last_point = (vertices[len - 3], vertices[len - 2], vertices[len - 1]);
@@ -25,7 +26,7 @@ fn normal<T: Float + Debug>(vertices: &[T]) -> Option<(T, T, T)> {
         },
     );
     let d = (sum.0 * sum.0 + sum.1 * sum.1 + sum.2 * sum.2).sqrt();
-    if d < T::from(1e-15).unwrap() {
+    if d < T::from(1e-30).unwrap() {
         return None;
     }
     Some((sum.0 / d, sum.1 / d, sum.2 / d))
@@ -36,7 +37,7 @@ pub fn project3d_to_2d<T: Float + Debug>(
     num_outer: usize,
     buf: &mut Vec<T>,
 ) -> bool {
-    let Some((nx, ny, nz)) = normal(&vertices[0..num_outer]) else {
+    let Some((nx, ny, nz)) = normal(&vertices[0..num_outer * 3]) else {
         return false;
     };
     buf.clear();
@@ -82,7 +83,7 @@ mod test {
     fn test_do_nothing() {
         let mut buf = Vec::new();
         let vertices = &[0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 2.0, 2.0, 0.0];
-        assert!(project3d_to_2d(vertices, 9, &mut buf));
+        assert!(project3d_to_2d(vertices, 3, &mut buf));
         assert!(buf == &[0., 0., 2., 0., 2., 2.]);
     }
 
@@ -90,7 +91,7 @@ mod test {
     fn test_flip() {
         let mut buf = Vec::new();
         let vertices = &[0.0, 0.0, 0.0, 2.0, 2.0, 0.0, 2.0, 0.0, 0.0];
-        assert!(project3d_to_2d(vertices, 9, &mut buf));
+        assert!(project3d_to_2d(vertices, 3, &mut buf));
         assert!(buf == &[0., 0., 2., 2., 0., 2.]);
     }
 
@@ -98,15 +99,15 @@ mod test {
     fn test_rotate() {
         let mut buf = Vec::new();
         let vertices = &[0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 2.0, 2.0];
-        assert!(project3d_to_2d(vertices, 9, &mut buf));
+        assert!(project3d_to_2d(vertices, 3, &mut buf));
         assert!(buf == &[0., 0., 2., 0., 2., 2.]);
     }
 
     #[test]
     fn test_invalid_input1() {
         let mut buf = Vec::new();
-        let vertices = &[0., 0.];
-        project3d_to_2d(vertices, 2, &mut buf);
+        let vertices = &[0., 0., 1., 1.];
+        assert!(!project3d_to_2d(vertices, 1, &mut buf));
     }
 
     #[test]
