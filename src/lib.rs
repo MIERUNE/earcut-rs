@@ -1,5 +1,11 @@
+#![no_std]
+
+extern crate alloc;
+
 pub mod utils_3d;
 
+use alloc::vec::Vec;
+use core::ptr;
 use num_traits::float::Float;
 
 pub trait Index: Copy {
@@ -321,7 +327,7 @@ impl<T: Float> Earcut<T> {
 
         let mut p = node!(self, c.next_i);
         let mut p_prev = node!(self, p.prev_i);
-        while !std::ptr::eq(p, a) {
+        while !ptr::eq(p, a) {
             let p_next = node!(self, p.next_i);
             if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1)
                 && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y)
@@ -374,7 +380,7 @@ impl<T: Float> Earcut<T> {
             };
 
             if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1)
-                && (!std::ptr::eq(p, a) && !std::ptr::eq(p, c))
+                && (!ptr::eq(p, a) && !ptr::eq(p, c))
                 && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y)
                 && area(node!(self, p.prev_i), p, node!(self, p.next_i)) >= T::zero()
             {
@@ -383,7 +389,7 @@ impl<T: Float> Earcut<T> {
             o_p = p.prev_z_i.and_then(|i| Some(node!(self, i)));
 
             if (n.x >= x0 && n.x <= x1 && n.y >= y0 && n.y <= y1)
-                && (!std::ptr::eq(n, a) && !std::ptr::eq(n, c))
+                && (!ptr::eq(n, a) && !ptr::eq(n, c))
                 && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, n.x, n.y)
                 && area(node!(self, n.prev_i), n, node!(self, n.next_i)) >= T::zero()
             {
@@ -397,7 +403,7 @@ impl<T: Float> Earcut<T> {
             if !(p.z >= min_z) {
                 break;
             };
-            if (!std::ptr::eq(p, ear_prev) && !std::ptr::eq(p, ear_next))
+            if (!ptr::eq(p, ear_prev) && !ptr::eq(p, ear_next))
                 && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y)
                 && area(node!(self, p.prev_i), p, node!(self, p.next_i)) >= T::zero()
             {
@@ -411,7 +417,7 @@ impl<T: Float> Earcut<T> {
             if !(n.z <= max_z) {
                 break;
             };
-            if (!std::ptr::eq(n, ear_prev) && !std::ptr::eq(n, ear_next))
+            if (!ptr::eq(n, ear_prev) && !ptr::eq(n, ear_next))
                 && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, n.x, n.y)
                 && area(node!(self, n.prev_i), n, node!(self, n.next_i)) >= T::zero()
             {
@@ -536,7 +542,7 @@ impl<T: Float> Earcut<T> {
             node!(self, *a)
                 .x
                 .partial_cmp(&node!(self, *b).x)
-                .unwrap_or(std::cmp::Ordering::Equal)
+                .unwrap_or(core::cmp::Ordering::Equal)
         });
 
         // process holes from left to right
@@ -816,7 +822,7 @@ impl<T: Float> Earcut<T> {
                 return true;
             }
             p = p_next;
-            if std::ptr::eq(p, a) {
+            if ptr::eq(p, a) {
                 return false;
             }
         }
@@ -847,7 +853,7 @@ impl<T: Float> Earcut<T> {
                 && p_next.y != p.y
                 && (px < (p_next.x - p.x) * (py - p.y) / (p_next.y - p.y) + p.x);
             p = p_next;
-            if std::ptr::eq(p, a) {
+            if ptr::eq(p, a) {
                 return inside;
             }
         }
