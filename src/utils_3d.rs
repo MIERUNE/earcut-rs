@@ -1,5 +1,6 @@
+use alloc::vec::Vec;
+use core::fmt::Debug;
 use num_traits::float::Float;
-use std::fmt::Debug;
 
 #[inline]
 fn cross<T: Float + Debug>((ax, ay, az): (T, T, T), (bx, by, bz): (T, T, T)) -> (T, T, T) {
