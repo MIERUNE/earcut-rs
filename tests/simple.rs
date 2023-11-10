@@ -44,7 +44,7 @@ fn test_invalid_empty_hole() {
     let dim = 2;
     let mut triangles = vec![];
     earcut.earcut(data, hole_indices, dim, &mut triangles);
-    assert_eq!(triangles.len(), 1 * 3);
+    assert_eq!(triangles.len(), 3);
     assert_eq!(deviation(data, hole_indices, dim, &triangles), 0.0);
 }
 

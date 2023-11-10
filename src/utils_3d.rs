@@ -73,7 +73,7 @@ pub fn project3d_to_2d<T: Float + Debug>(
             [(x * m11 + y * m12 + z * m13), (x * m21 + y * m22 + z * m23)]
         }))
     }
-    return true;
+    true
 }
 
 #[cfg(test)]
@@ -85,7 +85,7 @@ mod test {
         let mut buf = Vec::new();
         let vertices = &[0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 2.0, 2.0, 0.0];
         assert!(project3d_to_2d(vertices, 3, &mut buf));
-        assert!(buf == &[0., 0., 2., 0., 2., 2.]);
+        assert!(buf == [0., 0., 2., 0., 2., 2.]);
     }
 
     #[test]
@@ -93,7 +93,7 @@ mod test {
         let mut buf = Vec::new();
         let vertices = &[0.0, 0.0, 0.0, 2.0, 2.0, 0.0, 2.0, 0.0, 0.0];
         assert!(project3d_to_2d(vertices, 3, &mut buf));
-        assert!(buf == &[0., 0., 2., 2., 0., 2.]);
+        assert!(buf == [0., 0., 2., 2., 0., 2.]);
     }
 
     #[test]
@@ -101,7 +101,7 @@ mod test {
         let mut buf = Vec::new();
         let vertices = &[0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 2.0, 2.0];
         assert!(project3d_to_2d(vertices, 3, &mut buf));
-        assert!(buf == &[0., 0., 2., 0., 2., 2.]);
+        assert!(buf == [0., 0., 2., 0., 2., 2.]);
     }
 
     #[test]

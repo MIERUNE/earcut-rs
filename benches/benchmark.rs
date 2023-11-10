@@ -15,7 +15,7 @@ fn load_fixture(name: &str) -> (Vec<f64>, Vec<usize>) {
     let data: Vec<_> = expected.clone().into_iter().flatten().flatten().collect();
     let hole_indices: Vec<_> = expected
         .iter()
-        .map(|x| x.len() as usize)
+        .map(|x| x.len())
         .scan(0, |sum, e| {
             *sum += e;
             Some(*sum)
@@ -23,7 +23,7 @@ fn load_fixture(name: &str) -> (Vec<f64>, Vec<usize>) {
         .take(num_holes)
         .collect();
 
-    return (data, hole_indices);
+    (data, hole_indices)
 }
 
 fn bench(c: &mut Criterion) {

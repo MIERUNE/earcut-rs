@@ -1,5 +1,5 @@
 use earcut_rs::{deviation, Earcut};
-use serde_json;
+
 use std::fs;
 
 fn test_fixture(name: &str, num_triangles: usize, expected_deviation: f64) {

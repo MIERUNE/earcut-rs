@@ -30,7 +30,7 @@ impl Index for u16 {
 }
 impl Index for usize {
     fn into_usize(self) -> usize {
-        self as usize
+        self
     }
     fn from_usize(v: usize) -> Self {
         v as Self
@@ -91,6 +91,12 @@ pub struct Earcut<T: Float> {
     queue: Vec<usize>,
 }
 
+impl<T: Float> Default for Earcut<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Float> Earcut<T> {
     pub fn new() -> Self {
         Self {
@@ -114,7 +120,7 @@ impl<T: Float> Earcut<T> {
         triangles_out.clear();
         self.reset(data.len() / dim * 3 / 2);
 
-        let has_holes = hole_indices.len() > 0;
+        let has_holes = !hole_indices.is_empty();
         let outer_len: usize = if has_holes {
             hole_indices[0].into_usize() * dim
         } else {
@@ -209,7 +215,7 @@ impl<T: Float> Earcut<T> {
             }
         }
 
-        return last_i;
+        last_i
     }
 
     /// eliminate colinear or duplicate points
@@ -220,8 +226,7 @@ impl<T: Float> Earcut<T> {
         loop {
             let p = node!(self, p_i);
             let p_next = node!(self, p.next_i);
-            if !p.steiner
-                && (equals(p, &p_next) || area(node!(self, p.prev_i), p, &p_next).is_zero())
+            if !p.steiner && (equals(p, p_next) || area(node!(self, p.prev_i), p, p_next).is_zero())
             {
                 let (prev_i, next_i) = self.remove_node(p_i);
                 (p_i, end_i) = (prev_i, prev_i);
@@ -337,7 +342,7 @@ impl<T: Float> Earcut<T> {
             }
             (p_prev, p) = (p, p_next);
         }
-        return true;
+        true
     }
 
     #[inline]
@@ -362,8 +367,8 @@ impl<T: Float> Earcut<T> {
         let max_z = z_order(x1, y1, min_x, min_y, inv_size);
 
         let ear = node!(self, ear_i);
-        let mut o_p = ear.prev_z_i.and_then(|i| Some(node!(self, i)));
-        let mut o_n = ear.next_z_i.and_then(|i| Some(node!(self, i)));
+        let mut o_p = ear.prev_z_i.map(|i| node!(self, i));
+        let mut o_n = ear.next_z_i.map(|i| node!(self, i));
 
         let ear_prev = node!(self, ear.prev_i);
         let ear_next = node!(self, ear.next_i);
@@ -371,11 +376,11 @@ impl<T: Float> Earcut<T> {
         // look for points inside the triangle in both directions
         loop {
             let Some(p) = o_p else { break };
-            if !(p.z >= min_z) {
+            if p.z < min_z {
                 break;
             };
             let Some(n) = o_n else { break };
-            if !(n.z <= max_z) {
+            if n.z > max_z {
                 break;
             };
 
@@ -386,7 +391,7 @@ impl<T: Float> Earcut<T> {
             {
                 return false;
             }
-            o_p = p.prev_z_i.and_then(|i| Some(node!(self, i)));
+            o_p = p.prev_z_i.map(|i| node!(self, i));
 
             if (n.x >= x0 && n.x <= x1 && n.y >= y0 && n.y <= y1)
                 && (!ptr::eq(n, a) && !ptr::eq(n, c))
@@ -395,12 +400,12 @@ impl<T: Float> Earcut<T> {
             {
                 return false;
             }
-            o_n = p.next_z_i.and_then(|i| Some(node!(self, i)));
+            o_n = p.next_z_i.map(|i| node!(self, i));
         }
 
         // look for remaining points in decreasing z-order
         while let Some(p) = o_p {
-            if !(p.z >= min_z) {
+            if p.z < min_z {
                 break;
             };
             if (!ptr::eq(p, ear_prev) && !ptr::eq(p, ear_next))
@@ -409,12 +414,12 @@ impl<T: Float> Earcut<T> {
             {
                 return false;
             }
-            o_p = p.prev_z_i.and_then(|i| Some(node!(self, i)));
+            o_p = p.prev_z_i.map(|i| node!(self, i));
         }
 
         // look for remaining points in increasing z-order
         while let Some(n) = o_n {
-            if !(n.z <= max_z) {
+            if n.z > max_z {
                 break;
             };
             if (!ptr::eq(n, ear_prev) && !ptr::eq(n, ear_next))
@@ -423,10 +428,10 @@ impl<T: Float> Earcut<T> {
             {
                 return false;
             }
-            o_n = n.next_z_i.and_then(|i| Some(node!(self, i)));
+            o_n = n.next_z_i.map(|i| node!(self, i));
         }
 
-        return true;
+        true
     }
 
     /// go through all polygon nodes and cure small local self-intersections
@@ -550,7 +555,7 @@ impl<T: Float> Earcut<T> {
             outer_node_i = self.eliminate_hole(self.queue[i], outer_node_i);
         }
 
-        return outer_node_i;
+        outer_node_i
     }
 
     /// find a bridge between vertices that connects hole with an outer ring and and link it
@@ -562,7 +567,7 @@ impl<T: Float> Earcut<T> {
 
         // filter collinear points around the cuts
         self.filter_points(bridge_reverse_i, Some(node!(self, bridge_reverse_i).next_i));
-        return self.filter_points(bridge_i, Some(node!(self, bridge_i).next_i));
+        self.filter_points(bridge_i, Some(node!(self, bridge_i).next_i))
     }
 
     /// dimavid Eberly's algorithm for finding a bridge between hole and outer polygon
@@ -595,7 +600,7 @@ impl<T: Float> Earcut<T> {
             }
         }
 
-        let Some(mut m_i) = m_i else { return None };
+        let mut m_i = m_i?;
 
         // look for points inside the triangle of hole point, segment intersection and endpoint;
         // if there are no points found, we have a valid connection;
@@ -644,8 +649,8 @@ impl<T: Float> Earcut<T> {
     /// whether sector in vertex m contains sector in vertex p in the same coordinates
     #[inline(always)]
     fn sector_contains_sector(&self, m: &Node<T>, p: &Node<T>) -> bool {
-        return area(node!(self, m.prev_i), m, node!(self, p.prev_i)) < T::zero()
-            && area(node!(self, p.next_i), m, node!(self, m.next_i)) < T::zero();
+        area(node!(self, m.prev_i), m, node!(self, p.prev_i)) < T::zero()
+            && area(node!(self, p.next_i), m, node!(self, m.next_i)) < T::zero()
     }
 
     /// interlink polygon nodes in z-order
@@ -698,7 +703,7 @@ impl<T: Float> Earcut<T> {
                 }
                 let mut q_size = in_size;
 
-                while p_size > 0 || (q_size > 0 && q_i != None) {
+                while p_size > 0 || (q_size > 0 && q_i.is_some()) {
                     let (e_i, e) = if p_size == 0 {
                         q_size -= 1;
                         let e_i = q_i.unwrap();
@@ -886,7 +891,7 @@ impl<T: Float> Earcut<T> {
         self.nodes.push(a2);
         self.nodes.push(b2);
 
-        return b2_i;
+        b2_i
     }
 
     /// create a node and optionally link it with previous one (in a circular doubly linked list)
@@ -907,7 +912,7 @@ impl<T: Float> Earcut<T> {
             }
         }
         self.nodes.push(p);
-        return p_i;
+        p_i
     }
 
     #[inline(always)]
@@ -925,7 +930,7 @@ impl<T: Float> Earcut<T> {
         if let Some(next_z_i) = p_next_z_i {
             node_mut!(self, next_z_i).prev_z_i = p_prev_z_i;
         }
-        return (p_prev_i, p_next_i);
+        (p_prev_i, p_next_i)
     }
 }
 
@@ -937,7 +942,7 @@ pub fn deviation<T: Float, N: Index>(
     dim: usize,
     triangles: &[N],
 ) -> T {
-    let has_holes = hole_indices.len() > 0;
+    let has_holes = !hole_indices.is_empty();
     let outer_len = match has_holes {
         true => hole_indices[0].into_usize() * dim,
         false => data.len(),
@@ -956,7 +961,7 @@ pub fn deviation<T: Float, N: Index>(
     }
 
     let mut triangles_area = T::zero();
-    let x = |v: &N| (*v).into_usize() as usize * dim;
+    let x = |v: &N| (*v).into_usize() * dim;
     for ((a, b), c) in triangles
         .iter()
         .map(x)
@@ -993,7 +998,7 @@ fn signed_area<T: Float>(data: &[T], start: usize, end: usize, dim: usize) -> T 
         sum = sum + (bx - *ax) * (*ay + by);
         (bx, by) = (*ax, *ay);
     }
-    return sum;
+    sum
 }
 
 /// z-order of a point given coords and inverse of the longer side of data bbox
@@ -1010,35 +1015,32 @@ fn z_order<T: Float>(x: T, y: T, min_x: T, min_y: T, inv_size: T) -> u32 {
     y = (y | (y << 4)) & 0x0F0F0F0F;
     y = (y | (y << 2)) & 0x33333333;
     y = (y | (y << 1)) & 0x55555555;
-    return x | (y << 1);
+    x | (y << 1)
 }
 
 #[inline(always)]
 fn point_in_triangle<T: Float>(ax: T, ay: T, bx: T, by: T, cx: T, cy: T, px: T, py: T) -> bool {
-    return (cx - px) * (ay - py) >= (ax - px) * (cy - py)
+    (cx - px) * (ay - py) >= (ax - px) * (cy - py)
         && (ax - px) * (by - py) >= (bx - px) * (ay - py)
-        && (bx - px) * (cy - py) >= (cx - px) * (by - py);
+        && (bx - px) * (cy - py) >= (cx - px) * (by - py)
 }
 
 /// signed area of a triangle
 #[inline(always)]
 fn area<T: Float>(p: &Node<T>, q: &Node<T>, r: &Node<T>) -> T {
-    return (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+    (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y)
 }
 
 /// check if two points are equal
 #[inline(always)]
 fn equals<T: Float>(p1: &Node<T>, p2: &Node<T>) -> bool {
-    return p1.x == p2.x && p1.y == p2.y;
+    p1.x == p2.x && p1.y == p2.y
 }
 
 /// for collinear points p, q, r, check if point q lies on segment pr
 #[inline(always)]
 fn on_segment<T: Float>(p: &Node<T>, q: &Node<T>, r: &Node<T>) -> bool {
-    return q.x <= p.x.max(r.x)
-        && q.x >= p.x.min(r.x)
-        && q.y <= p.y.max(r.y)
-        && q.y >= p.y.max(r.y);
+    q.x <= p.x.max(r.x) && q.x >= p.x.min(r.x) && q.y <= p.y.max(r.y) && q.y >= p.y.max(r.y)
 }
 
 #[inline]
