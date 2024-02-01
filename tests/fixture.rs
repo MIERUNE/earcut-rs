@@ -28,7 +28,7 @@ fn test_fixture(name: &str, num_triangles: usize, expected_deviation: f64) {
 
     // check
     assert!(triangles.len() == num_triangles * 3);
-    if triangles.len() > 0 {
+    if !triangles.is_empty() {
         assert!(deviation(&data, &hole_indices, 2, &triangles) <= expected_deviation);
     }
 }

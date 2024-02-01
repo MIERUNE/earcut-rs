@@ -243,6 +243,7 @@ impl<T: Float> Earcut<T> {
     }
 
     /// main ear slicing loop which triangulates a polygon (given as a linked list)
+    #[allow(clippy::too_many_arguments)]
     fn earcut_linked<N: Index>(
         &mut self,
         ear_i: usize,
@@ -1019,6 +1020,7 @@ fn z_order<T: Float>(x: T, y: T, min_x: T, min_y: T, inv_size: T) -> u32 {
 }
 
 #[inline(always)]
+#[allow(clippy::too_many_arguments)]
 fn point_in_triangle<T: Float>(ax: T, ay: T, bx: T, by: T, cx: T, cy: T, px: T, py: T) -> bool {
     (cx - px) * (ay - py) >= (ax - px) * (cy - py)
         && (ax - px) * (by - py) >= (bx - px) * (ay - py)
