@@ -2,7 +2,7 @@
 
 extern crate alloc;
 
-pub mod utils_3d;
+pub mod utils3d;
 
 use alloc::vec::Vec;
 use core::ptr;
