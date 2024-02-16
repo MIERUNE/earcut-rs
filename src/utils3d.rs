@@ -7,15 +7,19 @@ fn cross<T: Float + Debug>((ax, ay, az): (T, T, T), (bx, by, bz): (T, T, T)) -> 
     (ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx)
 }
 
-fn normal<T: Float + Debug>(vertices: &[T]) -> Option<(T, T, T)> {
+fn normal<T: Float + Debug>(vertices: &[T], dim: usize) -> Option<(T, T, T)> {
     let len = vertices.len();
-    if len < 9 {
+    if len < dim * 3 {
         // At least 3 vertices required
         return None;
     }
-    let last_point = (vertices[len - 3], vertices[len - 2], vertices[len - 1]);
+    let last_point = (
+        vertices[len - dim],
+        vertices[len - dim + 1],
+        vertices[len - dim + 2],
+    );
 
-    let (sum, _) = vertices.chunks_exact(3).fold(
+    let (sum, _) = vertices.chunks_exact(dim).fold(
         ((T::zero(), T::zero(), T::zero()), last_point),
         |(acc, prev), data| {
             let (x, y, z) = (data[0], data[1], data[2]);
@@ -36,9 +40,10 @@ fn normal<T: Float + Debug>(vertices: &[T]) -> Option<(T, T, T)> {
 pub fn project3d_to_2d<T: Float + Debug>(
     vertices: &[T],
     num_outer: usize,
+    dim: usize,
     buf: &mut Vec<T>,
 ) -> bool {
-    let Some((nx, ny, nz)) = normal(&vertices[0..num_outer * 3]) else {
+    let Some((nx, ny, nz)) = normal(&vertices[0..num_outer * dim], dim) else {
         return false;
     };
     buf.clear();
@@ -47,10 +52,10 @@ pub fn project3d_to_2d<T: Float + Debug>(
     if dd < T::from(1e-15).unwrap() {
         if nz > T::zero() {
             // do nothing
-            buf.extend(vertices.chunks_exact(3).flat_map(|d| [d[0], d[1]]))
+            buf.extend(vertices.chunks_exact(dim).flat_map(|d| [d[0], d[1]]))
         } else {
             // flip
-            buf.extend(vertices.chunks_exact(3).flat_map(|d| [d[1], d[0]]))
+            buf.extend(vertices.chunks_exact(dim).flat_map(|d| [d[1], d[0]]))
         }
     } else {
         // rotation
@@ -68,7 +73,7 @@ pub fn project3d_to_2d<T: Float + Debug>(
         let m21 = s;
         let m22 = ay * ay * (T::one() - cost) + cost;
         let m23 = u;
-        buf.extend(vertices.chunks_exact(3).flat_map(|d| {
+        buf.extend(vertices.chunks_exact(dim).flat_map(|d| {
             let (x, y, z) = (d[0], d[1], d[2]);
             [(x * m11 + y * m12 + z * m13), (x * m21 + y * m22 + z * m23)]
         }))
@@ -82,39 +87,72 @@ mod test {
 
     #[test]
     fn test_do_nothing() {
+        // dim=3
         let mut buf = Vec::new();
         let vertices = &[0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 2.0, 2.0, 0.0];
-        assert!(project3d_to_2d(vertices, 3, &mut buf));
+        assert!(project3d_to_2d(vertices, 3, 3, &mut buf));
+        assert!(buf == [0., 0., 2., 0., 2., 2.]);
+
+        // dim=5
+        let mut buf = Vec::new();
+        let vertices = &[
+            0.0, 0.0, 0.0, 99.0, 99.0, 2.0, 0.0, 0.0, 99.0, 99.0, 2.0, 2.0, 0.0, 99.0, 99.0,
+        ];
+        assert!(project3d_to_2d(vertices, 3, 5, &mut buf));
         assert!(buf == [0., 0., 2., 0., 2., 2.]);
     }
 
     #[test]
     fn test_flip() {
+        // dim=3
         let mut buf = Vec::new();
         let vertices = &[0.0, 0.0, 0.0, 2.0, 2.0, 0.0, 2.0, 0.0, 0.0];
-        assert!(project3d_to_2d(vertices, 3, &mut buf));
+        assert!(project3d_to_2d(vertices, 3, 3, &mut buf));
+        assert!(buf == [0., 0., 2., 2., 0., 2.]);
+
+        // dim=4
+        let mut buf = Vec::new();
+        let vertices = &[
+            0.0, 0.0, 0.0, 99.0, 2.0, 2.0, 0.0, 99.0, 2.0, 0.0, 0.0, 99.0,
+        ];
+        assert!(project3d_to_2d(vertices, 3, 4, &mut buf));
         assert!(buf == [0., 0., 2., 2., 0., 2.]);
     }
 
     #[test]
     fn test_rotate() {
+        // dim=3
         let mut buf = Vec::new();
         let vertices = &[0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 2.0, 2.0];
-        assert!(project3d_to_2d(vertices, 3, &mut buf));
+        assert!(project3d_to_2d(vertices, 3, 3, &mut buf));
+        assert!(buf == [0., 0., 2., 0., 2., 2.]);
+
+        // dim=4
+        let mut buf = Vec::new();
+        let vertices = &[
+            0.0, 0.0, 0.0, 99.0, 0.0, 0.0, 2.0, 99.0, 0.0, 2.0, 2.0, 99.0,
+        ];
+        assert!(project3d_to_2d(vertices, 3, 4, &mut buf));
         assert!(buf == [0., 0., 2., 0., 2., 2.]);
     }
 
     #[test]
     fn test_invalid_input1() {
+        // dim=3
         let mut buf = Vec::new();
         let vertices = &[0., 0., 1., 1.];
-        assert!(!project3d_to_2d(vertices, 1, &mut buf));
+        assert!(!project3d_to_2d(vertices, 1, 3, &mut buf));
+
+        // dim=4
+        let mut buf = Vec::new();
+        let vertices = &[0., 0., 1., 1., 1.];
+        assert!(!project3d_to_2d(vertices, 1, 4, &mut buf));
     }
 
     #[test]
     fn test_invalid_input2() {
         // when normal is zero vector
         let vertices = &[0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0.];
-        assert!(normal(vertices).is_none());
+        assert!(normal(vertices, 3).is_none());
     }
 }
