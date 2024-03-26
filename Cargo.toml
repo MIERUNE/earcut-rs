@@ -1,6 +1,6 @@
 [package]
 name = "earcut-rs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Taku Fukada <naninunenor@gmail.com>", "MIERUNE Inc. <info@mierune.co.jp>"]
 license-file = "LICENSE.txt"

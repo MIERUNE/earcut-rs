@@ -10,7 +10,7 @@ fn load_fixture(name: &str, num_triangles: usize, expected_deviation: f64) {
 
     // prepare input
     let num_holes = expected.len();
-    let vertices: Vec<_> = expected.clone().into_iter().flatten().flatten().collect();
+    let vertices: Vec<_> = expected.clone().into_iter().flatten().collect();
     let hole_indices: Vec<_> = expected
         .into_iter()
         .map(|x| x.len() as u32)
@@ -25,13 +25,13 @@ fn load_fixture(name: &str, num_triangles: usize, expected_deviation: f64) {
     let mut triangles = vec![];
     let mut earcut = Earcut::new();
     for _ in 0..500 {
-        earcut.earcut(&vertices, &hole_indices, 2, &mut triangles);
+        earcut.earcut(&vertices, &hole_indices, &mut triangles);
     }
 
     // check
-    assert!(triangles.len() == num_triangles * 3);
+    assert!(triangles.len() == num_triangles);
     if !triangles.is_empty() {
-        assert!(deviation(&vertices, &hole_indices, 2, &triangles) <= expected_deviation);
+        assert!(deviation(&vertices, &hole_indices, &triangles) <= expected_deviation);
     }
 }
 
