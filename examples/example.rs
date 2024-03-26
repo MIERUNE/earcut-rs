@@ -29,7 +29,7 @@ fn load_fixture(name: &str, num_triangles: usize, expected_deviation: f64) {
     }
 
     // check
-    assert!(triangles.len() == num_triangles * 3);
+    assert!(triangles.len() == num_triangles);
     if !triangles.is_empty() {
         assert!(deviation(&vertices, &hole_indices, &triangles) <= expected_deviation);
     }
