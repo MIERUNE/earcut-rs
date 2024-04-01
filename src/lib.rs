@@ -118,16 +118,14 @@ impl<T: Float> Earcut<T> {
         self.nodes.reserve(capacity);
     }
 
-    pub fn earcut<'a, N: Index>(
+    pub fn earcut<N: Index>(
         &mut self,
-        data: impl IntoIterator<Item = &'a [T; 2]>,
+        data: impl IntoIterator<Item = T>,
         hole_indices: &[N],
-        triangles_out: &mut Vec<[N; 3]>,
-    ) where
-        T: 'a,
-    {
+        triangles_out: &mut Vec<N>,
+    ) {
         self.data.clear();
-        self.data.extend(data.into_iter().flatten());
+        self.data.extend(data);
 
         triangles_out.clear();
         self.reset(self.data.len() / 2 * 3 / 2);
@@ -253,7 +251,7 @@ impl<T: Float> Earcut<T> {
     fn earcut_linked<N: Index>(
         &mut self,
         ear_i: usize,
-        triangles: &mut Vec<[N; 3]>,
+        triangles: &mut Vec<N>,
         min_x: T,
         min_y: T,
         inv_size: T,
@@ -281,7 +279,7 @@ impl<T: Float> Earcut<T> {
             };
             if is_ear {
                 // cut off the triangle
-                triangles.push([
+                triangles.extend([
                     N::from_usize(node!(self.nodes, prev_i).i / 2),
                     N::from_usize(ear.i / 2),
                     N::from_usize(node!(self.nodes, next_i).i / 2),
@@ -445,7 +443,7 @@ impl<T: Float> Earcut<T> {
     fn cure_local_intersections<N: Index>(
         &mut self,
         mut start_i: usize,
-        triangles: &mut Vec<[N; 3]>,
+        triangles: &mut Vec<N>,
     ) -> usize {
         let mut p_i = start_i;
         loop {
@@ -463,7 +461,7 @@ impl<T: Float> Earcut<T> {
                 && self.locally_inside(a, b)
                 && self.locally_inside(b, a)
             {
-                triangles.push([
+                triangles.extend([
                     N::from_usize(a.i / 2),
                     N::from_usize(p.i / 2),
                     N::from_usize(b.i / 2),
@@ -486,7 +484,7 @@ impl<T: Float> Earcut<T> {
     fn split_earcut<N: Index>(
         &mut self,
         start_i: usize,
-        triangles: &mut Vec<[N; 3]>,
+        triangles: &mut Vec<N>,
         min_x: T,
         min_y: T,
         inv_size: T,
@@ -938,12 +936,12 @@ fn remove_node<T: Float>(nodes: &mut [Node<T>], p_i: usize) -> (usize, usize) {
 
 /// return a percentage difference between the polygon area and its triangulation area;
 /// used to verify correctness of triangulation
-pub fn deviation<'a, T: Float + 'a, N: Index>(
-    data: impl IntoIterator<Item = &'a [T; 2]>,
+pub fn deviation<T: Float, N: Index>(
+    data: impl IntoIterator<Item = T>,
     hole_indices: &[N],
-    triangles: &[[N; 3]],
+    triangles: &[N],
 ) -> T {
-    let data = data.into_iter().copied().flatten().collect::<Vec<T>>();
+    let data = data.into_iter().collect::<Vec<T>>();
 
     let has_holes = !hole_indices.is_empty();
     let outer_len = match has_holes {
@@ -964,7 +962,10 @@ pub fn deviation<'a, T: Float + 'a, N: Index>(
     }
 
     let mut triangles_area = T::zero();
-    for [a, b, c] in triangles {
+    for [a, b, c] in triangles
+        .chunks_exact(3)
+        .map(|idxs| [idxs[0], idxs[1], idxs[2]])
+    {
         let a = a.into_usize() * 2;
         let b = b.into_usize() * 2;
         let c = c.into_usize() * 2;
