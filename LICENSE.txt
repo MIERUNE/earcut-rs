@@ -1,6 +1,7 @@
 ISC License
 
 Copyright (c) 2016, Mapbox
+Copyright (c) 2023, Taku Fukada
 Copyright (c) 2023, MIERUNE Inc.
 
 Permission to use, copy, modify, and/or distribute this software for any purpose

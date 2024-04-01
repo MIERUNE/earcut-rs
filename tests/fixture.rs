@@ -24,12 +24,12 @@ fn test_fixture(name: &str, num_triangles: usize, expected_deviation: f64) {
     // earcut
     let mut triangles = vec![];
     let mut earcut = Earcut::new();
-    earcut.earcut(&data, &hole_indices, &mut triangles);
+    earcut.earcut(data.iter().copied(), &hole_indices, &mut triangles);
 
     // check
-    assert!(triangles.len() == num_triangles);
+    assert!(triangles.len() == num_triangles * 3);
     if !triangles.is_empty() {
-        assert!(deviation(&data, &hole_indices, &triangles) <= expected_deviation);
+        assert!(deviation(data, &hole_indices, &triangles) <= expected_deviation);
     }
 }
 

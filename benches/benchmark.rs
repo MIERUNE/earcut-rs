@@ -33,42 +33,42 @@ fn bench(c: &mut Criterion) {
     c.bench_function("water", |b| {
         let (data, hole_indices) = load_fixture("water");
         b.iter(|| {
-            earcut.earcut(&data, &hole_indices, &mut triangles);
+            earcut.earcut(data.iter().copied(), &hole_indices, &mut triangles);
         })
     });
 
     c.bench_function("building", |b| {
         let (data, hole_indices) = load_fixture("building");
         b.iter(|| {
-            earcut.earcut(&data, &hole_indices, &mut triangles);
+            earcut.earcut(data.iter().copied(), &hole_indices, &mut triangles);
         })
     });
 
     c.bench_function("water2", |b| {
         let (data, hole_indices) = load_fixture("water2");
         b.iter(|| {
-            earcut.earcut(&data, &hole_indices, &mut triangles);
+            earcut.earcut(data.iter().copied(), &hole_indices, &mut triangles);
         })
     });
 
     c.bench_function("water3", |b| {
         let (data, hole_indices) = load_fixture("water3");
         b.iter(|| {
-            earcut.earcut(&data, &hole_indices, &mut triangles);
+            earcut.earcut(data.iter().copied(), &hole_indices, &mut triangles);
         })
     });
 
     c.bench_function("water3b", |b| {
         let (data, hole_indices) = load_fixture("water3b");
         b.iter(|| {
-            earcut.earcut(&data, &hole_indices, &mut triangles);
+            earcut.earcut(data.iter().copied(), &hole_indices, &mut triangles);
         })
     });
 
     c.bench_function("water-huge", |b| {
         let (data, hole_indices) = load_fixture("water-huge");
         b.iter(|| {
-            earcut.earcut(&data, &hole_indices, &mut triangles);
+            earcut.earcut(data.iter().copied(), &hole_indices, &mut triangles);
             assert_eq!(triangles.len(), 5177 * 3)
         })
     });
@@ -76,21 +76,21 @@ fn bench(c: &mut Criterion) {
     c.bench_function("water-huge2", |b| {
         let (data, hole_indices) = load_fixture("water-huge2");
         b.iter(|| {
-            earcut.earcut(&data, &hole_indices, &mut triangles);
+            earcut.earcut(data.iter().copied(), &hole_indices, &mut triangles);
         })
     });
 
     c.bench_function("rain", |b| {
         let (data, hole_indices) = load_fixture("rain");
         b.iter(|| {
-            earcut.earcut(&data, &hole_indices, &mut triangles);
+            earcut.earcut(data.iter().copied(), &hole_indices, &mut triangles);
         })
     });
 
     c.bench_function("hilbert", |b| {
         let (data, hole_indices) = load_fixture("hilbert");
         b.iter(|| {
-            earcut.earcut(&data, &hole_indices, &mut triangles);
+            earcut.earcut(data.iter().copied(), &hole_indices, &mut triangles);
         })
     });
 }
