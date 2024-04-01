@@ -120,12 +120,12 @@ impl<T: Float> Earcut<T> {
 
     pub fn earcut<N: Index>(
         &mut self,
-        data: impl IntoIterator<Item = [T; 2]>,
+        data: impl IntoIterator<Item = T>,
         hole_indices: &[N],
         triangles_out: &mut Vec<N>,
     ) {
         self.data.clear();
-        self.data.extend(data.into_iter().flatten());
+        self.data.extend(data);
 
         triangles_out.clear();
         self.reset(self.data.len() / 2 * 3 / 2);
@@ -937,11 +937,11 @@ fn remove_node<T: Float>(nodes: &mut [Node<T>], p_i: usize) -> (usize, usize) {
 /// return a percentage difference between the polygon area and its triangulation area;
 /// used to verify correctness of triangulation
 pub fn deviation<T: Float, N: Index>(
-    data: impl IntoIterator<Item = [T; 2]>,
+    data: impl IntoIterator<Item = T>,
     hole_indices: &[N],
     triangles: &[N],
 ) -> T {
-    let data = data.into_iter().flatten().collect::<Vec<T>>();
+    let data = data.into_iter().collect::<Vec<T>>();
 
     let has_holes = !hole_indices.is_empty();
     let outer_len = match has_holes {

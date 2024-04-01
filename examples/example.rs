@@ -10,7 +10,12 @@ fn load_fixture(name: &str, num_triangles: usize, expected_deviation: f64) {
 
     // prepare input
     let num_holes = expected.len();
-    let vertices: Vec<_> = expected.clone().into_iter().flatten().collect();
+    let vertices = expected
+        .clone()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect::<Vec<_>>();
     let hole_indices: Vec<_> = expected
         .into_iter()
         .map(|x| x.len() as u32)
@@ -31,7 +36,9 @@ fn load_fixture(name: &str, num_triangles: usize, expected_deviation: f64) {
     // check
     assert!(triangles.len() == num_triangles);
     if !triangles.is_empty() {
-        assert!(deviation(vertices, &hole_indices, &triangles) <= expected_deviation);
+        assert!(
+            deviation(vertices.iter().copied(), &hole_indices, &triangles) <= expected_deviation
+        );
     }
 }
 

@@ -4,7 +4,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 
 use earcut_rs::Earcut;
 
-fn load_fixture(name: &str) -> (Vec<[f64; 2]>, Vec<usize>) {
+fn load_fixture(name: &str) -> (Vec<f64>, Vec<usize>) {
     // load JSON
     type Coords = Vec<Vec<[f64; 2]>>;
     let s = fs::read_to_string("./tests/fixtures/".to_string() + name + ".json").unwrap();
@@ -12,7 +12,12 @@ fn load_fixture(name: &str) -> (Vec<[f64; 2]>, Vec<usize>) {
 
     // prepare input
     let num_holes = expected.len();
-    let data: Vec<_> = expected.clone().into_iter().flatten().collect();
+    let data = expected
+        .clone()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect::<Vec<_>>();
     let hole_indices: Vec<_> = expected
         .iter()
         .map(|x| x.len())
