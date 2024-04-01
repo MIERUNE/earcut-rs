@@ -936,7 +936,7 @@ fn remove_node<T: Float>(nodes: &mut [Node<T>], p_i: usize) -> (usize, usize) {
 
 /// return a percentage difference between the polygon area and its triangulation area;
 /// used to verify correctness of triangulation
-pub fn deviation<'a, T: Float, N: Index>(
+pub fn deviation<T: Float, N: Index>(
     data: impl IntoIterator<Item = [T; 2]>,
     hole_indices: &[N],
     triangles: &[N],
