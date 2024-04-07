@@ -105,6 +105,9 @@ impl<T: Float> Default for Earcut<T> {
 }
 
 impl<T: Float> Earcut<T> {
+    /// Creates a new instance for the earcut algorithm.
+    ///
+    /// You can reuse the same instance for multiple triangulations to reduce memory allocations.
     pub fn new() -> Self {
         Self {
             data: Vec::new(),
@@ -118,6 +121,9 @@ impl<T: Float> Earcut<T> {
         self.nodes.reserve(capacity);
     }
 
+    /// Performs the earcut triangulation on a polygon.
+    ///
+    /// The API is similar to the original JavaScript implementation, except you can provide a vector for the output indices.
     pub fn earcut<N: Index>(
         &mut self,
         data: impl IntoIterator<Item = T>,
@@ -317,7 +323,6 @@ impl<T: Float> Earcut<T> {
     }
 
     /// check whether a polygon node forms a valid ear with adjacent nodes
-    #[inline]
     fn is_ear(&self, ear_i: usize) -> bool {
         let b = node!(self.nodes, ear_i);
         let a = node!(self.nodes, b.prev_i);
@@ -860,7 +865,6 @@ impl<T: Float> Earcut<T> {
 
     /// link two polygon vertices with a bridge; if the vertices belong to the same ring, it splits polygon into two;
     /// if one belongs to the outer ring and another to a hole, it merges it into a single ring
-    #[inline(always)]
     fn split_polygon(&mut self, a_i: usize, b_i: usize) -> usize {
         let a2_i = self.nodes.len();
         let b2_i = a2_i + 1;
@@ -890,7 +894,6 @@ impl<T: Float> Earcut<T> {
 }
 
 /// create a node and optionally link it with previous one (in a circular doubly linked list)
-#[inline(always)]
 fn insert_node<T: Float>(
     nodes: &mut Vec<Node<T>>,
     i: usize,
@@ -916,7 +919,6 @@ fn insert_node<T: Float>(
     p_i
 }
 
-#[inline(always)]
 fn remove_node<T: Float>(nodes: &mut [Node<T>], p_i: usize) -> (usize, usize) {
     let p = node!(nodes, p_i);
     let p_next_i = p.next_i;
@@ -934,7 +936,7 @@ fn remove_node<T: Float>(nodes: &mut [Node<T>], p_i: usize) -> (usize, usize) {
     (p_prev_i, p_next_i)
 }
 
-/// return a percentage difference between the polygon area and its triangulation area;
+/// Returns a percentage difference between the polygon area and its triangulation area;
 /// used to verify correctness of triangulation
 pub fn deviation<T: Float, N: Index>(
     data: impl IntoIterator<Item = T>,
@@ -1002,7 +1004,6 @@ fn signed_area<T: Float>(data: &[T], start: usize, end: usize) -> T {
 }
 
 /// z-order of a point given coords and inverse of the longer side of data bbox
-#[inline(always)]
 fn z_order<T: Float>(x: T, y: T, min_x: T, min_y: T, inv_size: T) -> u32 {
     // coords are transformed into non-negative 15-bit integer range
     let mut x = ((x - min_x) * inv_size).to_u32().unwrap();
@@ -1018,7 +1019,6 @@ fn z_order<T: Float>(x: T, y: T, min_x: T, min_y: T, inv_size: T) -> u32 {
     x | (y << 1)
 }
 
-#[inline(always)]
 #[allow(clippy::too_many_arguments)]
 fn point_in_triangle<T: Float>(ax: T, ay: T, bx: T, by: T, cx: T, cy: T, px: T, py: T) -> bool {
     (cx - px) * (ay - py) >= (ax - px) * (cy - py)
@@ -1027,24 +1027,20 @@ fn point_in_triangle<T: Float>(ax: T, ay: T, bx: T, by: T, cx: T, cy: T, px: T, 
 }
 
 /// signed area of a triangle
-#[inline(always)]
 fn area<T: Float>(p: &Node<T>, q: &Node<T>, r: &Node<T>) -> T {
     (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y)
 }
 
 /// check if two points are equal
-#[inline(always)]
 fn equals<T: Float>(p1: &Node<T>, p2: &Node<T>) -> bool {
     p1.x == p2.x && p1.y == p2.y
 }
 
 /// for collinear points p, q, r, check if point q lies on segment pr
-#[inline(always)]
 fn on_segment<T: Float>(p: &Node<T>, q: &Node<T>, r: &Node<T>) -> bool {
     q.x <= p.x.max(r.x) && q.x >= p.x.min(r.x) && q.y <= p.y.max(r.y) && q.y >= p.y.max(r.y)
 }
 
-#[inline(always)]
 fn sign<T: Float>(v: T) -> i8 {
     (v > T::zero()) as i8 - (v < T::zero()) as i8
 }
