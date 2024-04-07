@@ -1,4 +1,4 @@
-use earcut_rs::{deviation, Earcut};
+use earcut::{deviation, Earcut};
 
 #[test]
 fn test_empty() {

@@ -2,7 +2,7 @@ use std::fs;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 
-use earcut_rs::Earcut;
+use earcut::Earcut;
 
 fn load_fixture(name: &str) -> (Vec<f64>, Vec<usize>) {
     // load JSON
