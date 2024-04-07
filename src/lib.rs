@@ -1,3 +1,5 @@
+//! A Rust port of the [Earcut](https://github.com/mapbox/earcut) polygon triangulation library.
+
 #![no_std]
 
 extern crate alloc;
@@ -8,6 +10,7 @@ use alloc::vec::Vec;
 use core::ptr;
 use num_traits::float::Float;
 
+/// Index of a vertex
 pub trait Index: Copy {
     fn into_usize(self) -> usize;
     fn from_usize(v: usize) -> Self;
@@ -92,6 +95,7 @@ impl<T: Float> Node<T> {
     }
 }
 
+/// Instance of the earcut algorithm.
 pub struct Earcut<T: Float> {
     data: Vec<T>,
     nodes: Vec<Node<T>>,
@@ -105,9 +109,9 @@ impl<T: Float> Default for Earcut<T> {
 }
 
 impl<T: Float> Earcut<T> {
-    /// Creates a new instance for the earcut algorithm.
+    /// Creates a new instance of the earcut algorithm.
     ///
-    /// You can reuse the same instance for multiple triangulations to reduce memory allocations.
+    /// You can reuse a single instance for multiple triangulations to reduce memory allocations.
     pub fn new() -> Self {
         Self {
             data: Vec::new(),

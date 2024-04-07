@@ -2,7 +2,7 @@
 
 [![Test](https://github.com/MIERUNE/earcut-rs/actions/workflows/Test.yml/badge.svg)](https://github.com/MIERUNE/earcut-rs/actions/workflows/Test.yml)
 [![codecov](https://codecov.io/gh/MIERUNE/earcut-rs/graph/badge.svg?token=thKlQiVjLc)](https://codecov.io/gh/MIERUNE/earcut-rs)
-[![Crates.io Version](https://img.shields.io/crates/v/earcut-rs)](https://crates.io/crates/earcut-rs)
+[![Crates.io Version](https://img.shields.io/crates/v/earcut)](https://crates.io/crates/earcut)
 
 A Rust port of the [mapbox/earcut](https://github.com/mapbox/earcut) polygon triangulation library, implemented from scratch with some reference to [donbright/earcutr](https://github.com/donbright/earcutr).
 
