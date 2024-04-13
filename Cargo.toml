@@ -9,7 +9,7 @@ repository = "https://github.com/MIERUNE/earcut-rs"
 categories = ["graphics", "science", "no-std"]
 
 [dependencies]
-num-traits = "0.2"
+num-traits = { version = "0.2", no-default-features = true }
 
 [dev-dependencies]
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
