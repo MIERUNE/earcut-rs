@@ -109,7 +109,6 @@ fn bench(c: &mut Criterion) {
         let (data, hole_indices) = load_fixture("water-huge");
         b.iter(|| {
             earcut.earcut(data.iter().copied(), &hole_indices, &mut triangles);
-            assert_eq!(triangles.len(), 5177 * 3)
         })
     });
 

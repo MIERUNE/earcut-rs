@@ -160,8 +160,9 @@ impl<T: Float> Earcut<T> {
     }
 
     pub fn earcut_impl<N: Index>(&mut self, hole_indices: &[N], triangles_out: &mut Vec<N>) {
-        triangles_out.reserve(self.data.len() / 2);
+        triangles_out.reserve(self.data.len() / 2 + 1);
         self.reset(self.data.len() / 2 * 3 / 2);
+
         let has_holes = !hole_indices.is_empty();
         let outer_len: usize = if has_holes {
             hole_indices[0].into_usize() * 2
@@ -621,9 +622,9 @@ fn sort_linked<T: Float>(nodes: &mut [Node<T>], list_i: NodeIndex) {
         let mut tail_i: Option<NodeIndex> = None;
         let mut num_merges = 0;
 
-        while let Some(pp) = p_i {
+        while let Some(p_i_s) = p_i {
             num_merges += 1;
-            let mut q_i = node!(nodes, pp).next_z_i;
+            let mut q_i = node!(nodes, p_i_s).next_z_i;
             let mut p_size: u32 = 1;
             for _ in 1..in_size {
                 if let Some(i) = q_i {
@@ -636,49 +637,50 @@ fn sort_linked<T: Float>(nodes: &mut [Node<T>], list_i: NodeIndex) {
             let mut q_size = in_size;
 
             loop {
-                let (e_i, e) = if p_size > 0 && q_size > 0 {
-                    let p_i_s = p_i.unwrap();
-                    if let Some(q_i_s) = q_i {
-                        if node!(nodes, p_i_s).z <= node!(nodes, q_i_s).z {
+                let e_i = if p_size > 0 {
+                    let Some(p_i_s) = p_i else { break };
+                    if q_size > 0 {
+                        if let Some(q_i_s) = q_i {
+                            if node!(nodes, p_i_s).z <= node!(nodes, q_i_s).z {
+                                p_size -= 1;
+                                let e = node_mut!(nodes, p_i_s);
+                                e.prev_z_i = tail_i;
+                                p_i = e.next_z_i;
+                                p_i_s
+                            } else {
+                                q_size -= 1;
+                                let e = node_mut!(nodes, q_i_s);
+                                e.prev_z_i = tail_i;
+                                q_i = e.next_z_i;
+                                q_i_s
+                            }
+                        } else {
                             p_size -= 1;
                             let e = node_mut!(nodes, p_i_s);
+                            e.prev_z_i = tail_i;
                             p_i = e.next_z_i;
-                            (p_i_s, e)
-                        } else {
-                            q_size -= 1;
-                            let e = node_mut!(nodes, q_i_s);
-                            q_i = e.next_z_i;
-                            (q_i_s, e)
+                            p_i_s
                         }
                     } else {
                         p_size -= 1;
                         let e = node_mut!(nodes, p_i_s);
+                        e.prev_z_i = tail_i;
                         p_i = e.next_z_i;
-                        (p_i_s, e)
+                        p_i_s
                     }
-                } else if p_size > 0 && q_size == 0 {
-                    if let Some(e_i) = p_i {
-                        p_size -= 1;
-                        let e = node_mut!(nodes, e_i);
-                        p_i = e.next_z_i;
-                        (e_i, e)
-                    } else {
-                        unreachable!()
-                    }
-                } else if q_size > 0 && p_size == 0 {
-                    if let Some(e_i) = q_i {
+                } else if q_size > 0 {
+                    if let Some(q_i_s) = q_i {
                         q_size -= 1;
-                        let e = node_mut!(nodes, e_i);
+                        let e = node_mut!(nodes, q_i_s);
+                        e.prev_z_i = tail_i;
                         q_i = e.next_z_i;
-                        (e_i, e)
+                        q_i_s
                     } else {
                         break;
                     }
                 } else {
                     break;
                 };
-
-                e.prev_z_i = tail_i;
 
                 if let Some(tail_i) = tail_i {
                     node_mut!(nodes, tail_i).next_z_i = Some(e_i);
@@ -813,7 +815,7 @@ fn locally_inside<T: Float>(nodes: &[Node<T>], a: &Node<T>, b: &Node<T>) -> bool
     }
 }
 
-/// dimavid Eberly's algorithm for finding a bridge between hole and outer polygon
+/// David Eberly's algorithm for finding a bridge between hole and outer polygon
 fn find_hole_bridge<T: Float>(
     nodes: &[Node<T>],
     hole: &Node<T>,
@@ -825,25 +827,25 @@ fn find_hole_bridge<T: Float>(
 
     // find a segment intersected by a ray from the hole's leftmost point to the left;
     // segment's endpoint with lesser x will be potential connection point
+    let mut p = node!(nodes, p_i);
     loop {
-        let p = node!(nodes, p_i);
-        let p_next_i = p.next_i;
-        let p_next = node!(nodes, p_next_i);
+        let p_next = node!(nodes, p.next_i);
         if hole.y <= p.y && hole.y >= p_next.y && p_next.y != p.y {
             let x = p.x + (hole.y - p.y) * (p_next.x - p.x) / (p_next.y - p.y);
             if x <= hole.x && x > qx {
                 qx = x;
-                m_i = Some(if p.x < p_next.x { p_i } else { p_next_i });
+                m_i = Some(if p.x < p_next.x { p_i } else { p.next_i });
                 if x == hole.x {
                     // hole touches outer segment; pick leftmost endpoint
                     return m_i;
                 }
             }
         }
-        p_i = p_next_i;
+        p_i = p.next_i;
         if p_i == outer_node_i {
             break;
         }
+        p = p_next;
     }
 
     let mut m_i = m_i?;
@@ -907,8 +909,8 @@ fn filter_points<T: Float>(
     let mut end_i = end_i.unwrap_or(start_i);
 
     let mut p_i = start_i;
+    let mut p = node!(nodes, p_i);
     loop {
-        let p = node!(nodes, p_i);
         let p_next = node!(nodes, p.next_i);
         if !p.steiner && (equals(p, p_next) || area(node!(nodes, p.prev_i), p, p_next) == T::zero())
         {
@@ -917,11 +919,13 @@ fn filter_points<T: Float>(
             if p_i == next_i {
                 return end_i;
             }
+            p = node!(nodes, p_i);
         } else {
             p_i = p.next_i;
             if p_i == end_i {
                 return end_i;
             }
+            p = p_next;
         };
     }
 }
@@ -1069,9 +1073,9 @@ fn signed_area<T: Float>(data: &[T], start: u32, end: u32) -> T {
 /// z-order of a point given coords and inverse of the longer side of data bbox
 fn z_order<T: Float>(x: T, y: T, min_x: T, min_y: T, inv_size: T) -> i32 {
     // coords are transformed into non-negative 15-bit integer range
-    let x = ((x - min_x) * inv_size).to_i64().unwrap();
-    let y = ((y - min_y) * inv_size).to_i64().unwrap();
-    let mut xy = x << 32 | y;
+    let x = ((x - min_x) * inv_size).to_u32().unwrap();
+    let y = ((y - min_y) * inv_size).to_u32().unwrap();
+    let mut xy = (x as i64) << 32 | y as i64;
     xy = (xy | (xy << 8)) & 0x00FF00FF00FF00FF;
     xy = (xy | (xy << 4)) & 0x0F0F0F0F0F0F0F0F;
     xy = (xy | (xy << 2)) & 0x3333333333333333;
@@ -1101,6 +1105,6 @@ fn on_segment<T: Float>(p: &Node<T>, q: &Node<T>, r: &Node<T>) -> bool {
     q.x <= p.x.max(r.x) && q.x >= p.x.min(r.x) && q.y <= p.y.max(r.y) && q.y >= p.y.max(r.y)
 }
 
-fn sign<T: Float>(v: T) -> i8 {
-    (v > T::zero()) as i8 - (v < T::zero()) as i8
+fn sign<T: Float>(v: T) -> i32 {
+    (v > T::zero()) as i32 - (v < T::zero()) as i32
 }
