@@ -171,7 +171,7 @@ impl<T: Float> Earcut<T> {
         };
 
         // create nodes
-        let Some(mut outer_node_i) = self.linked_list(0, outer_len as u32, true) else {
+        let Some(mut outer_node_i) = self.linked_list(0, outer_len, true) else {
             return;
         };
         let outer_node = node!(self.nodes, outer_node_i);
@@ -221,21 +221,19 @@ impl<T: Float> Earcut<T> {
     }
 
     /// create a circular doubly linked list from polygon points in the specified winding order
-    fn linked_list(&mut self, start: u32, end: u32, clockwise: bool) -> Option<NodeIndex> {
+    fn linked_list(&mut self, start: usize, end: usize, clockwise: bool) -> Option<NodeIndex> {
         let mut last_i: Option<NodeIndex> = None;
-        let iter = self.data[start as usize..end as usize]
-            .chunks_exact(2)
-            .enumerate();
+        let iter = self.data[start..end].chunks_exact(2).enumerate();
 
         if clockwise == (signed_area(&self.data, start, end) > T::zero()) {
             for (i, v) in iter {
-                let idx = start + i as u32 * 2;
-                last_i = Some(insert_node(&mut self.nodes, idx, v[0], v[1], last_i));
+                let idx = start + i * 2;
+                last_i = Some(insert_node(&mut self.nodes, idx as u32, v[0], v[1], last_i));
             }
         } else {
             for (i, v) in iter.rev() {
-                let idx = start + i as u32 * 2;
-                last_i = Some(insert_node(&mut self.nodes, idx, v[0], v[1], last_i));
+                let idx = start + i * 2;
+                last_i = Some(insert_node(&mut self.nodes, idx as u32, v[0], v[1], last_i));
             }
         };
 
@@ -264,7 +262,7 @@ impl<T: Float> Earcut<T> {
             } else {
                 self.data.len()
             };
-            if let Some(list_i) = self.linked_list(start as u32, end as u32, false) {
+            if let Some(list_i) = self.linked_list(start, end, false) {
                 let list = &mut node_mut!(self.nodes, list_i);
                 if list_i == list.next_i {
                     list.steiner = true;
@@ -547,16 +545,15 @@ fn split_earcut<T: Float, N: Index>(
 ) {
     // look for a valid diagonal that divides the polygon into two
     let mut ai = start_i;
+    let mut a = node!(nodes, ai);
     loop {
-        let a = node!(nodes, ai);
-        let a_i = a.i;
-        let a_prev_i = a.prev_i;
-        let a_next_i = a.next_i;
-        let mut bi = (node!(nodes, a_next_i)).next_i;
+        let a_next = node!(nodes, a.next_i);
+        let a_prev = node!(nodes, a.prev_i);
+        let mut bi = a_next.next_i;
 
-        while bi != a_prev_i {
+        while bi != a.prev_i {
             let b = node!(nodes, bi);
-            if a_i != b.i && is_valid_diagonal(nodes, a, b) {
+            if a.i != b.i && is_valid_diagonal(nodes, a, b, a_next, a_prev) {
                 // split the polygon in two by the diagonal
                 let mut ci = split_polygon(nodes, ai, bi);
 
@@ -574,10 +571,11 @@ fn split_earcut<T: Float, N: Index>(
             bi = b.next_i;
         }
 
-        ai = node!(nodes, ai).next_i;
+        ai = a.next_i;
         if ai == start_i {
             return;
         }
+        a = a_next;
     }
 }
 
@@ -590,23 +588,23 @@ fn index_curve<T: Float>(
     inv_size: T,
 ) {
     let mut p_i = start_i;
+    let mut p = node_mut!(nodes, p_i);
 
     loop {
-        let p = node_mut!(nodes, p_i);
         if p.z == 0 {
             p.z = z_order(p.x, p.y, min_x, min_y, inv_size);
         }
         p.prev_z_i = Some(p.prev_i);
         p.next_z_i = Some(p.next_i);
         p_i = p.next_i;
+        p = node_mut!(nodes, p_i);
         if p_i == start_i {
             break;
         }
     }
 
-    let p_prev_z_i = node!(nodes, p_i).prev_z_i.unwrap();
+    let p_prev_z_i = p.prev_z_i.take().unwrap();
     node_mut!(nodes, p_prev_z_i).next_z_i = None;
-    node_mut!(nodes, p_i).prev_z_i = None;
     sort_linked(nodes, p_i);
 }
 
@@ -704,8 +702,8 @@ fn sort_linked<T: Float>(nodes: &mut [Node<T>], list_i: NodeIndex) {
 /// find the leftmost node of a polygon ring
 fn get_leftmost<T: Float>(nodes: &[Node<T>], start_i: NodeIndex) -> NodeIndex {
     let mut p_i = start_i;
-    let mut leftmost_i = start_i;
     let mut p = node!(nodes, p_i);
+    let mut leftmost_i = start_i;
     let mut leftmost = p;
 
     loop {
@@ -721,9 +719,13 @@ fn get_leftmost<T: Float>(nodes: &[Node<T>], start_i: NodeIndex) -> NodeIndex {
 }
 
 /// check if a diagonal between two polygon nodes is valid (lies in polygon interior)
-fn is_valid_diagonal<T: Float>(nodes: &[Node<T>], a: &Node<T>, b: &Node<T>) -> bool {
-    let a_next = node!(nodes, a.next_i);
-    let a_prev = node!(nodes, a.prev_i);
+fn is_valid_diagonal<T: Float>(
+    nodes: &[Node<T>],
+    a: &Node<T>,
+    b: &Node<T>,
+    a_next: &Node<T>,
+    a_prev: &Node<T>,
+) -> bool {
     let b_next = node!(nodes, b.next_i);
     let b_prev = node!(nodes, b.prev_i);
     // dones't intersect other edges
@@ -1016,19 +1018,19 @@ pub fn deviation<T: Float, N: Index>(
     let outer_len = match has_holes {
         true => hole_indices[0].into_usize() * 2,
         false => data.len(),
-    } as u32;
+    };
     let polygon_area = if data.len() < 6 {
         T::zero()
     } else {
         let mut polygon_area = signed_area(&data, 0, outer_len).abs();
         if has_holes {
             for i in 0..hole_indices.len() {
-                let start = hole_indices[i].into_usize() as u32 * 2;
+                let start = hole_indices[i].into_usize() * 2;
                 let end = if i < hole_indices.len() - 1 {
                     hole_indices[i + 1].into_usize() * 2
                 } else {
                     data.len()
-                } as u32;
+                };
                 if end - start >= 6 {
                     polygon_area = polygon_area - signed_area(&data, start, end).abs();
                 }
@@ -1058,11 +1060,11 @@ pub fn deviation<T: Float, N: Index>(
 }
 
 /// check if a point lies within a convex triangle
-fn signed_area<T: Float>(data: &[T], start: u32, end: u32) -> T {
-    let mut bx = data[(end - 2) as usize];
-    let mut by = data[(end - 1) as usize];
+fn signed_area<T: Float>(data: &[T], start: usize, end: usize) -> T {
+    let mut bx = data[end - 2];
+    let mut by = data[end - 1];
     let mut sum = T::zero();
-    for a in data[start as usize..end as usize].chunks_exact(2) {
+    for a in data[start..end].chunks_exact(2) {
         let (ax, ay) = (a[0], a[1]);
         sum = sum + (bx - ax) * (ay + by);
         (bx, by) = (ax, ay);
