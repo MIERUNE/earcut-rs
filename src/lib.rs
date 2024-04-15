@@ -112,7 +112,7 @@ impl<T: Float> Node<T> {
 
 /// Instance of the earcut algorithm.
 pub struct Earcut<T: Float> {
-    data: Vec<T>,
+    data: Vec<[T; 2]>,
     nodes: Vec<Node<T>>,
     queue: Vec<NodeIndex>,
 }
@@ -146,26 +146,26 @@ impl<T: Float> Earcut<T> {
     /// The API is similar to the original JavaScript implementation, except you can provide a vector for the output indices.
     pub fn earcut<N: Index>(
         &mut self,
-        data: impl IntoIterator<Item = T>,
+        data: impl IntoIterator<Item = [T; 2]>,
         hole_indices: &[N],
         triangles_out: &mut Vec<N>,
     ) {
         self.data.clear();
         self.data.extend(data);
         triangles_out.clear();
-        if self.data.len() < 6 {
+        if self.data.len() < 3 {
             return;
         }
         self.earcut_impl(hole_indices, triangles_out);
     }
 
     pub fn earcut_impl<N: Index>(&mut self, hole_indices: &[N], triangles_out: &mut Vec<N>) {
-        triangles_out.reserve(self.data.len() / 2 + 1);
-        self.reset(self.data.len() / 2 * 3 / 2);
+        triangles_out.reserve(self.data.len() + 1);
+        self.reset(self.data.len() / 2 * 3);
 
         let has_holes = !hole_indices.is_empty();
         let outer_len: usize = if has_holes {
-            hole_indices[0].into_usize() * 2
+            hole_indices[0].into_usize()
         } else {
             self.data.len()
         };
@@ -187,21 +187,20 @@ impl<T: Float> Earcut<T> {
         let mut inv_size = T::zero();
 
         // if the shape is not too simple, we'll use z-order curve hash later; calculate polygon bbox
-        if self.data.len() > 80 * 2 {
-            let (max_x, max_y) = self.data[2..outer_len].windows(2).fold(
-                (self.data[0], self.data[1]),
-                |(ax, ay), b| {
+        if self.data.len() > 80 {
+            let [max_x, max_y] =
+                self.data[1..outer_len]
+                    .iter()
+                    .fold(self.data[0], |[ax, ay], b| {
+                        let (bx, by) = (b[0], b[1]);
+                        [T::max(ax, bx), T::max(ay, by)]
+                    });
+            [min_x, min_y] = self.data[1..outer_len]
+                .iter()
+                .fold(self.data[0], |[ax, ay], b| {
                     let (bx, by) = (b[0], b[1]);
-                    (T::max(ax, bx), T::max(ay, by))
-                },
-            );
-            (min_x, min_y) = self.data[2..outer_len].windows(2).fold(
-                (self.data[0], self.data[1]),
-                |(ax, ay), b| {
-                    let (bx, by) = (b[0], b[1]);
-                    (T::min(ax, bx), T::min(ay, by))
-                },
-            );
+                    [T::min(ax, bx), T::min(ay, by)]
+                });
             // minX, minY and invSize are later used to transform coords into integers for z-order calculation
             inv_size = (max_x - min_x).max(max_y - min_y);
             if inv_size != T::zero() {
@@ -223,17 +222,17 @@ impl<T: Float> Earcut<T> {
     /// create a circular doubly linked list from polygon points in the specified winding order
     fn linked_list(&mut self, start: usize, end: usize, clockwise: bool) -> Option<NodeIndex> {
         let mut last_i: Option<NodeIndex> = None;
-        let iter = self.data[start..end].chunks_exact(2).enumerate();
+        let iter = self.data[start..end].iter().enumerate();
 
         if clockwise == (signed_area(&self.data, start, end) > T::zero()) {
-            for (i, v) in iter {
-                let idx = start + i * 2;
-                last_i = Some(insert_node(&mut self.nodes, idx as u32, v[0], v[1], last_i));
+            for (i, &[x, y]) in iter {
+                let idx = start + i;
+                last_i = Some(insert_node(&mut self.nodes, idx as u32, x, y, last_i));
             }
         } else {
-            for (i, v) in iter.rev() {
-                let idx = start + i * 2;
-                last_i = Some(insert_node(&mut self.nodes, idx as u32, v[0], v[1], last_i));
+            for (i, &[x, y]) in iter.rev() {
+                let idx = start + i;
+                last_i = Some(insert_node(&mut self.nodes, idx as u32, x, y, last_i));
             }
         };
 
@@ -256,9 +255,9 @@ impl<T: Float> Earcut<T> {
     ) -> NodeIndex {
         self.queue.clear();
         for (i, hi) in hole_indices.iter().enumerate() {
-            let start = (*hi).into_usize() * 2;
+            let start = (*hi).into_usize();
             let end = if i < hole_indices.len() - 1 {
-                hole_indices[i + 1].into_usize() * 2
+                hole_indices[i + 1].into_usize()
             } else {
                 self.data.len()
             };
@@ -334,9 +333,9 @@ fn earcut_linked<T: Float, N: Index>(
             let next_next_i = next.next_i;
 
             // cut off the triangle
-            triangles.push(N::from_usize(node!(nodes, pi).i as usize / 2));
-            triangles.push(N::from_usize(ear.i as usize / 2));
-            triangles.push(N::from_usize(next_i as usize / 2));
+            triangles.push(N::from_usize(node!(nodes, pi).i as usize));
+            triangles.push(N::from_usize(ear.i as usize));
+            triangles.push(N::from_usize(next_i as usize));
 
             remove_node(nodes, ear_i);
 
@@ -516,9 +515,9 @@ fn cure_local_intersections<T: Float, N: Index>(
             && locally_inside(nodes, b, a)
         {
             triangles.extend([
-                N::from_usize(a.i as usize / 2),
-                N::from_usize(p.i as usize / 2),
-                N::from_usize(b.i as usize / 2),
+                N::from_usize(a.i as usize),
+                N::from_usize(p.i as usize),
+                N::from_usize(b.i as usize),
             ]);
 
             remove_node(nodes, p_i);
@@ -881,7 +880,7 @@ fn find_hole_bridge<T: Float>(
             if locally_inside(nodes, p, hole)
                 && (tan < tan_min
                     || (tan == tan_min
-                        && (p.x > m.x || p.x == m.x && sector_contains_sector(nodes, m, p))))
+                        && (p.x > m.x || (p.x == m.x && sector_contains_sector(nodes, m, p)))))
             {
                 (m_i, m) = (p_i, p);
                 tan_min = tan;
@@ -974,8 +973,7 @@ fn insert_node<T: Float>(
         Some(last_i) => {
             let last = node_mut!(nodes, last_i);
             let last_next_i = last.next_i;
-            last.next_i = p_i;
-            p.next_i = last_next_i;
+            (p.next_i, last.next_i) = (last_next_i, p_i);
             p.prev_i = last_i;
             node_mut!(nodes, last_next_i).prev_i = p_i;
         }
@@ -1009,29 +1007,29 @@ fn remove_node<T: Float>(nodes: &mut [Node<T>], p_i: NodeIndex) -> (NodeIndex, N
 /// Returns a percentage difference between the polygon area and its triangulation area;
 /// used to verify correctness of triangulation
 pub fn deviation<T: Float, N: Index>(
-    data: impl IntoIterator<Item = T>,
+    data: impl IntoIterator<Item = [T; 2]>,
     hole_indices: &[N],
     triangles: &[N],
 ) -> T {
-    let data = data.into_iter().collect::<Vec<T>>();
+    let data = data.into_iter().collect::<Vec<[T; 2]>>();
     let has_holes = !hole_indices.is_empty();
     let outer_len = match has_holes {
-        true => hole_indices[0].into_usize() * 2,
+        true => hole_indices[0].into_usize(),
         false => data.len(),
     };
-    let polygon_area = if data.len() < 6 {
+    let polygon_area = if data.len() < 3 {
         T::zero()
     } else {
         let mut polygon_area = signed_area(&data, 0, outer_len).abs();
         if has_holes {
             for i in 0..hole_indices.len() {
-                let start = hole_indices[i].into_usize() * 2;
+                let start = hole_indices[i].into_usize();
                 let end = if i < hole_indices.len() - 1 {
-                    hole_indices[i + 1].into_usize() * 2
+                    hole_indices[i + 1].into_usize()
                 } else {
                     data.len()
                 };
-                if end - start >= 6 {
+                if end - start >= 3 {
                     polygon_area = polygon_area - signed_area(&data, start, end).abs();
                 }
             }
@@ -1044,12 +1042,12 @@ pub fn deviation<T: Float, N: Index>(
         .chunks_exact(3)
         .map(|idxs| [idxs[0], idxs[1], idxs[2]])
     {
-        let a = a.into_usize() * 2;
-        let b = b.into_usize() * 2;
-        let c = c.into_usize() * 2;
+        let a = a.into_usize();
+        let b = b.into_usize();
+        let c = c.into_usize();
         triangles_area = triangles_area
-            + ((data[a] - data[c]) * (data[b + 1] - data[a + 1])
-                - (data[a] - data[b]) * (data[c + 1] - data[a + 1]))
+            + ((data[a][0] - data[c][0]) * (data[b][1] - data[a][1])
+                - (data[a][0] - data[b][0]) * (data[c][1] - data[a][1]))
                 .abs();
     }
     if polygon_area == T::zero() && triangles_area == T::zero() {
@@ -1060,12 +1058,10 @@ pub fn deviation<T: Float, N: Index>(
 }
 
 /// check if a point lies within a convex triangle
-fn signed_area<T: Float>(data: &[T], start: usize, end: usize) -> T {
-    let mut bx = data[end - 2];
-    let mut by = data[end - 1];
+fn signed_area<T: Float>(data: &[[T; 2]], start: usize, end: usize) -> T {
+    let [mut bx, mut by] = data[end - 1];
     let mut sum = T::zero();
-    for a in data[start..end].chunks_exact(2) {
-        let (ax, ay) = (a[0], a[1]);
+    for &[ax, ay] in &data[start..end] {
         sum = sum + (bx - ax) * (ay + by);
         (bx, by) = (ax, ay);
     }

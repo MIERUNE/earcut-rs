@@ -10,7 +10,7 @@ fn test_fixture(name: &str, num_triangles: usize, expected_deviation: f64) {
 
     // prepare input
     let num_holes = expected.len();
-    let data: Vec<f64> = expected.clone().into_iter().flatten().flatten().collect();
+    let data: Vec<[f64; 2]> = expected.clone().into_iter().flatten().collect();
     let hole_indices: Vec<_> = expected
         .into_iter()
         .map(|x| x.len() as u32)
