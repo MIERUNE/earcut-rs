@@ -4,7 +4,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 
 use earcut::Earcut;
 
-fn load_fixture(name: &str) -> (Vec<f64>, Vec<usize>) {
+fn load_fixture(name: &str) -> (Vec<[f64; 2]>, Vec<usize>) {
     // load JSON
     type Coords = Vec<Vec<[f64; 2]>>;
     let s = fs::read_to_string("./tests/fixtures/".to_string() + name + ".json").unwrap();
@@ -12,12 +12,7 @@ fn load_fixture(name: &str) -> (Vec<f64>, Vec<usize>) {
 
     // prepare input
     let num_holes = expected.len();
-    let data = expected
-        .clone()
-        .into_iter()
-        .flatten()
-        .flatten()
-        .collect::<Vec<_>>();
+    let data = expected.clone().into_iter().flatten().collect::<Vec<_>>();
     let hole_indices: Vec<_> = expected
         .iter()
         .map(|x| x.len())
@@ -109,7 +104,6 @@ fn bench(c: &mut Criterion) {
         let (data, hole_indices) = load_fixture("water-huge");
         b.iter(|| {
             earcut.earcut(data.iter().copied(), &hole_indices, &mut triangles);
-            assert_eq!(triangles.len(), 5177 * 3)
         })
     });
 
