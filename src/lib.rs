@@ -7,6 +7,7 @@ extern crate alloc;
 pub mod utils3d;
 
 use alloc::vec::Vec;
+use core::cmp::Ordering;
 use core::num::NonZeroU32;
 use core::ptr;
 use num_traits::float::Float;
@@ -79,9 +80,7 @@ struct Node<T: Float> {
     /// z-order curve value
     z: i32,
     /// vertex coordinates x
-    x: T,
-    /// vertex coordinates y
-    y: T,
+    xy: [T; 2],
     /// previous vertex nodes in a polygon ring
     prev_i: NodeIndex,
     /// next vertex nodes in a polygon ring
@@ -94,12 +93,18 @@ struct Node<T: Float> {
     steiner: bool,
 }
 
+struct LinkInfo {
+    prev_i: NodeIndex,
+    next_i: NodeIndex,
+    prev_z_i: Option<NodeIndex>,
+    next_z_i: Option<NodeIndex>,
+}
+
 impl<T: Float> Node<T> {
-    fn new(i: u32, x: T, y: T) -> Self {
+    fn new(i: u32, xy: [T; 2]) -> Self {
         Self {
             i,
-            x,
-            y,
+            xy,
             prev_i: unsafe { NodeIndex::new_unchecked(1) },
             next_i: unsafe { NodeIndex::new_unchecked(1) },
             z: 0,
@@ -108,13 +113,22 @@ impl<T: Float> Node<T> {
             steiner: false,
         }
     }
+
+    fn link_info(&self) -> LinkInfo {
+        LinkInfo {
+            prev_i: self.prev_i,
+            next_i: self.next_i,
+            prev_z_i: self.prev_z_i,
+            next_z_i: self.next_z_i,
+        }
+    }
 }
 
 /// Instance of the earcut algorithm.
 pub struct Earcut<T: Float> {
     data: Vec<[T; 2]>,
     nodes: Vec<Node<T>>,
-    queue: Vec<NodeIndex>,
+    queue: Vec<(NodeIndex, T)>,
 }
 
 impl<T: Float> Default for Earcut<T> {
@@ -138,7 +152,8 @@ impl<T: Float> Earcut<T> {
     fn reset(&mut self, capacity: usize) {
         self.nodes.clear();
         self.nodes.reserve(capacity);
-        self.nodes.push(Node::new(0, T::infinity(), T::infinity())); // dummy node
+        self.nodes
+            .push(Node::new(0, [T::infinity(), T::infinity()])); // dummy node
     }
 
     /// Performs the earcut triangulation on a polygon.
@@ -225,21 +240,22 @@ impl<T: Float> Earcut<T> {
         let iter = self.data[start..end].iter().enumerate();
 
         if clockwise == (signed_area(&self.data, start, end) > T::zero()) {
-            for (i, &[x, y]) in iter {
+            for (i, &xy) in iter {
                 let idx = start + i;
-                last_i = Some(insert_node(&mut self.nodes, idx as u32, x, y, last_i));
+                last_i = Some(insert_node(&mut self.nodes, idx as u32, xy, last_i));
             }
         } else {
-            for (i, &[x, y]) in iter.rev() {
+            for (i, &xy) in iter.rev() {
                 let idx = start + i;
-                last_i = Some(insert_node(&mut self.nodes, idx as u32, x, y, last_i));
+                last_i = Some(insert_node(&mut self.nodes, idx as u32, xy, last_i));
             }
         };
 
         if let Some(li) = last_i {
             let last = node!(self.nodes, li);
             if equals(last, node!(self.nodes, last.next_i)) {
-                let (_, next_i) = remove_node(&mut self.nodes, li);
+                let ll = last.link_info();
+                let (_, next_i) = remove_node(&mut self.nodes, ll);
                 last_i = Some(next_i);
             }
         }
@@ -266,19 +282,16 @@ impl<T: Float> Earcut<T> {
                 if list_i == list.next_i {
                     list.steiner = true;
                 }
-                self.queue.push(get_leftmost(&self.nodes, list_i))
+                let (leftmost_i, leftmost) = get_leftmost(&self.nodes, list_i);
+                self.queue.push((leftmost_i, leftmost.xy[0]));
             }
         }
 
-        self.queue.sort_unstable_by(|a, b| {
-            node!(self.nodes, *a)
-                .x
-                .partial_cmp(&node!(self.nodes, *b).x)
-                .unwrap_or(core::cmp::Ordering::Equal)
-        });
+        self.queue
+            .sort_unstable_by(|(_a, ax), (_b, bx)| ax.partial_cmp(bx).unwrap_or(Ordering::Equal));
 
         // process holes from left to right
-        for &q in &self.queue {
+        for &(q, _) in &self.queue {
             outer_node_i = eliminate_hole(&mut self.nodes, q, outer_node_i);
         }
 
@@ -319,25 +332,24 @@ fn earcut_linked<T: Float, N: Index>(
         if ear.prev_i == ear.next_i {
             break;
         }
-        let pi = ear.prev_i;
         let ni = ear.next_i;
 
-        let is_ear = if inv_size != T::zero() {
-            is_ear_hashed(nodes, ear_i, min_x, min_y, inv_size)
+        let (is_ear, prev, next) = if inv_size != T::zero() {
+            is_ear_hashed(nodes, ear, min_x, min_y, inv_size)
         } else {
-            is_ear(nodes, ear_i)
+            is_ear(nodes, ear)
         };
         if is_ear {
-            let next = node!(nodes, ni);
             let next_i = next.i;
             let next_next_i = next.next_i;
 
             // cut off the triangle
-            triangles.push(N::from_usize(node!(nodes, pi).i as usize));
+            triangles.push(N::from_usize(prev.i as usize));
             triangles.push(N::from_usize(ear.i as usize));
             triangles.push(N::from_usize(next_i as usize));
 
-            remove_node(nodes, ear_i);
+            let ll = ear.link_info();
+            remove_node(nodes, ll);
 
             // skipping the next vertex leads to less sliver triangles
             (ear_i, stop_i) = (next_next_i, next_next_i);
@@ -368,66 +380,72 @@ fn earcut_linked<T: Float, N: Index>(
 }
 
 /// check whether a polygon node forms a valid ear with adjacent nodes
-fn is_ear<T: Float>(nodes: &[Node<T>], ear_i: NodeIndex) -> bool {
-    let b = node!(nodes, ear_i);
+fn is_ear<'a, T: Float>(
+    nodes: &'a [Node<T>],
+    ear: &'a Node<T>,
+) -> (bool, &'a Node<T>, &'a Node<T>) {
+    let b = ear;
     let a = node!(nodes, b.prev_i);
     let c = node!(nodes, b.next_i);
 
     if area(a, b, c) >= T::zero() {
         // reflex, can't be an ear
-        return false;
+        return (false, a, c);
     }
 
     // now make sure we don't have other points inside the potential ear
 
     // triangle bbox
-    let x0 = a.x.min(b.x.min(c.x));
-    let y0 = a.y.min(b.y.min(c.y));
-    let x1 = a.x.max(b.x.max(c.x));
-    let y1 = a.y.max(b.y.max(c.y));
+    let x0 = a.xy[0].min(b.xy[0].min(c.xy[0]));
+    let y0 = a.xy[1].min(b.xy[1].min(c.xy[1]));
+    let x1 = a.xy[0].max(b.xy[0].max(c.xy[0]));
+    let y1 = a.xy[1].max(b.xy[1].max(c.xy[1]));
 
     let mut p = node!(nodes, c.next_i);
     let mut p_prev = node!(nodes, p.prev_i);
     while !ptr::eq(p, a) {
         let p_next = node!(nodes, p.next_i);
-        if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1)
-            && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y)
+        if (p.xy[0] >= x0 && p.xy[0] <= x1 && p.xy[1] >= y0 && p.xy[1] <= y1)
+            && point_in_triangle(a.xy, b.xy, c.xy, p.xy)
             && area(p_prev, p, p_next) >= T::zero()
         {
-            return false;
+            return (false, a, c);
         }
         (p_prev, p) = (p, p_next);
     }
-    true
+    (true, a, c)
 }
 
-fn is_ear_hashed<T: Float>(
-    nodes: &[Node<T>],
-    ear_i: NodeIndex,
+fn is_ear_hashed<'a, T: Float>(
+    nodes: &'a [Node<T>],
+    ear: &'a Node<T>,
     min_x: T,
     min_y: T,
     inv_size: T,
-) -> bool {
-    let b = node!(nodes, ear_i);
+) -> (bool, &'a Node<T>, &'a Node<T>) {
+    let b = ear;
     let a = node!(nodes, b.prev_i);
     let c = node!(nodes, b.next_i);
 
     if area(a, b, c) >= T::zero() {
         // reflex, can't be an ear
-        return false;
+        return (false, a, c);
     }
 
     // triangle bbox
-    let x0 = a.x.min(b.x.min(c.x));
-    let y0 = a.y.min(b.y.min(c.y));
-    let x1 = a.x.max(b.x.max(c.x));
-    let y1 = a.y.max(b.y.max(c.y));
+    let xy_min = [
+        a.xy[0].min(b.xy[0].min(c.xy[0])),
+        a.xy[1].min(b.xy[1].min(c.xy[1])),
+    ];
+    let xy_max = [
+        a.xy[0].max(b.xy[0].max(c.xy[0])),
+        a.xy[1].max(b.xy[1].max(c.xy[1])),
+    ];
 
     // z-order range for the current triangle bbox;
-    let min_z = z_order(x0, y0, min_x, min_y, inv_size);
-    let max_z = z_order(x1, y1, min_x, min_y, inv_size);
+    let min_z = z_order(xy_min, min_x, min_y, inv_size);
+    let max_z = z_order(xy_max, min_x, min_y, inv_size);
 
-    let ear = node!(nodes, ear_i);
     let mut o_p = ear.prev_z_i.map(|i| node!(nodes, i));
     let mut o_n = ear.next_z_i.map(|i| node!(nodes, i));
 
@@ -442,21 +460,27 @@ fn is_ear_hashed<T: Float>(
             break;
         };
 
-        if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1)
+        if ((p.xy[0] >= xy_min[0])
+            & (p.xy[0] <= xy_max[0])
+            & (p.xy[1] >= xy_min[1])
+            & (p.xy[1] <= xy_max[1]))
             && (!ptr::eq(p, a) && !ptr::eq(p, c))
-            && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y)
+            && point_in_triangle(a.xy, b.xy, c.xy, p.xy)
             && area(node!(nodes, p.prev_i), p, node!(nodes, p.next_i)) >= T::zero()
         {
-            return false;
+            return (false, a, c);
         }
         o_p = p.prev_z_i.map(|i| node!(nodes, i));
 
-        if (n.x >= x0 && n.x <= x1 && n.y >= y0 && n.y <= y1)
+        if ((n.xy[0] >= xy_min[0])
+            & (n.xy[0] <= xy_max[0])
+            & (n.xy[1] >= xy_min[1])
+            & (n.xy[1] <= xy_max[1]))
             && (!ptr::eq(n, a) && !ptr::eq(n, c))
-            && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, n.x, n.y)
+            && point_in_triangle(a.xy, b.xy, c.xy, n.xy)
             && area(node!(nodes, n.prev_i), n, node!(nodes, n.next_i)) >= T::zero()
         {
-            return false;
+            return (false, a, c);
         }
         o_n = n.next_z_i.map(|i| node!(nodes, i));
     }
@@ -466,12 +490,15 @@ fn is_ear_hashed<T: Float>(
         if p.z < min_z {
             break;
         };
-        if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1)
+        if ((p.xy[0] >= xy_min[0])
+            & (p.xy[0] <= xy_max[0])
+            & (p.xy[1] >= xy_min[1])
+            & (p.xy[1] <= xy_max[1]))
             && (!ptr::eq(p, a) && !ptr::eq(p, c))
-            && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y)
+            && point_in_triangle(a.xy, b.xy, c.xy, p.xy)
             && area(node!(nodes, p.prev_i), p, node!(nodes, p.next_i)) >= T::zero()
         {
-            return false;
+            return (false, a, c);
         }
         o_p = p.prev_z_i.map(|i| node!(nodes, i));
     }
@@ -481,17 +508,20 @@ fn is_ear_hashed<T: Float>(
         if n.z > max_z {
             break;
         };
-        if (n.x >= x0 && n.x <= x1 && n.y >= y0 && n.y <= y1)
+        if ((n.xy[0] >= xy_min[0])
+            & (n.xy[0] <= xy_max[0])
+            & (n.xy[1] >= xy_min[1])
+            & (n.xy[1] <= xy_max[1]))
             && (!ptr::eq(n, a) && !ptr::eq(n, c))
-            && point_in_triangle(a.x, a.y, b.x, b.y, c.x, c.y, n.x, n.y)
+            && point_in_triangle(a.xy, b.xy, c.xy, n.xy)
             && area(node!(nodes, n.prev_i), n, node!(nodes, n.next_i)) >= T::zero()
         {
-            return false;
+            return (false, a, c);
         }
         o_n = n.next_z_i.map(|i| node!(nodes, i));
     }
 
-    true
+    (true, a, c)
 }
 
 /// go through all polygon nodes and cure small local self-intersections
@@ -520,13 +550,16 @@ fn cure_local_intersections<T: Float, N: Index>(
                 N::from_usize(b.i as usize),
             ]);
 
-            remove_node(nodes, p_i);
-            remove_node(nodes, p_next_i);
+            let b_next_i = b.next_i;
+            remove_node(nodes, p.link_info());
+            let pnl = node!(nodes, p_next_i).link_info();
+            remove_node(nodes, pnl);
 
-            (p_i, start_i) = (b_i, b_i);
+            (p_i, start_i) = (b_next_i, b_i);
+        } else {
+            p_i = p.next_i;
         }
 
-        p_i = node!(nodes, p_i).next_i;
         if p_i == start_i {
             return filter_points(nodes, p_i, None);
         }
@@ -591,7 +624,7 @@ fn index_curve<T: Float>(
 
     loop {
         if p.z == 0 {
-            p.z = z_order(p.x, p.y, min_x, min_y, inv_size);
+            p.z = z_order(p.xy, min_x, min_y, inv_size);
         }
         p.prev_z_i = Some(p.prev_i);
         p.next_z_i = Some(p.next_i);
@@ -610,7 +643,7 @@ fn index_curve<T: Float>(
 /// Simon Tatham's linked list merge sort algorithm
 /// http://www.chiark.greenend.org.uk/~sgtatham/algorithms/listsort.html
 fn sort_linked<T: Float>(nodes: &mut [Node<T>], list_i: NodeIndex) {
-    let mut in_size: usize = 1;
+    let mut in_size: u32 = 1;
     let mut list_i = Some(list_i);
 
     loop {
@@ -699,19 +732,19 @@ fn sort_linked<T: Float>(nodes: &mut [Node<T>], list_i: NodeIndex) {
 }
 
 /// find the leftmost node of a polygon ring
-fn get_leftmost<T: Float>(nodes: &[Node<T>], start_i: NodeIndex) -> NodeIndex {
+fn get_leftmost<T: Float>(nodes: &[Node<T>], start_i: NodeIndex) -> (NodeIndex, &Node<T>) {
     let mut p_i = start_i;
     let mut p = node!(nodes, p_i);
     let mut leftmost_i = start_i;
     let mut leftmost = p;
 
     loop {
-        if p.x < leftmost.x || (p.x == leftmost.x && p.y < leftmost.y) {
+        if p.xy[0] < leftmost.xy[0] || (p.xy[0] == leftmost.xy[0] && p.xy[1] < leftmost.xy[1]) {
             (leftmost_i, leftmost) = (p_i, p);
         }
         p_i = p.next_i;
         if p_i == start_i {
-            return leftmost_i;
+            return (leftmost_i, leftmost);
         }
         p = node!(nodes, p_i);
     }
@@ -728,15 +761,15 @@ fn is_valid_diagonal<T: Float>(
     let b_next = node!(nodes, b.next_i);
     let b_prev = node!(nodes, b.prev_i);
     // dones't intersect other edges
-    (a_next.i != b.i && a_prev.i != b.i && !intersects_polygon(nodes, a, b))
-            // locally visible
-            && ((locally_inside(nodes, a, b) && locally_inside(nodes, b, a) && middle_inside(nodes, a, b))
-                // does not create opposite-facing sectors
-                && (area(a_prev, a, b_prev) != T::zero() || area(a, b_prev, b) != T::zero())
-                // special zero-length case
-                || equals(a, b)
-                    && area(a_prev, a, a_next) > T::zero()
-                    && area(b_prev, b, b_next) > T::zero())
+    (((a_next.i != b.i) && (a_prev.i != b.i)) && !intersects_polygon(nodes, a, b))
+        // locally visible
+        && ((locally_inside(nodes, a, b) && locally_inside(nodes, b, a) && middle_inside(nodes, a, b))
+            // does not create opposite-facing sectors
+            && (area(a_prev, a, b_prev) != T::zero() || area(a, b_prev, b) != T::zero())
+            // special zero-length case
+            || equals(a, b)
+                && area(a_prev, a, a_next) > T::zero()
+                && area(b_prev, b, b_next) > T::zero())
 }
 
 /// check if two segments intersect
@@ -745,7 +778,7 @@ fn intersects<T: Float>(p1: &Node<T>, q1: &Node<T>, p2: &Node<T>, q2: &Node<T>) 
     let o2 = sign(area(p1, q1, q2));
     let o3 = sign(area(p2, q2, p1));
     let o4 = sign(area(p2, q2, q1));
-    (o1 != o2 && o3 != o4) // general case
+    ((o1 != o2) & (o3 != o4)) // general case
         || (o3 == 0 && on_segment(p2, p1, q2)) // p2, q2 and p1 are collinear and p1 lies on p2q2
         || (o4 == 0 && on_segment(p2, q1, q2)) // p2, q2 and q1 are collinear and q1 lies on p2q2
         || (o2 == 0 && on_segment(p1, q2, q1)) // p1, q1 and q2 are collinear and q2 lies on p1q1
@@ -757,7 +790,7 @@ fn intersects_polygon<T: Float>(nodes: &[Node<T>], a: &Node<T>, b: &Node<T>) -> 
     let mut p = a;
     loop {
         let p_next = node!(nodes, p.next_i);
-        if (p.i != a.i && p.i != b.i && p_next.i != a.i && p_next.i != b.i)
+        if (((p.i != a.i) && (p.i != b.i)) && ((p_next.i != a.i) && (p_next.i != b.i)))
             && intersects(p, p_next, a, b)
         {
             return true;
@@ -774,12 +807,13 @@ fn middle_inside<T: Float>(nodes: &[Node<T>], a: &Node<T>, b: &Node<T>) -> bool 
     let mut p = a;
     let mut inside = false;
     let two = T::one() + T::one();
-    let (px, py) = ((a.x + b.x) / two, (a.y + b.y) / two);
+    let (px, py) = ((a.xy[0] + b.xy[0]) / two, (a.xy[1] + b.xy[1]) / two);
     loop {
         let p_next = node!(nodes, p.next_i);
-        inside ^= (p.y > py) != (p_next.y > py)
-            && p_next.y != p.y
-            && (px < (p_next.x - p.x) * (py - p.y) / (p_next.y - p.y) + p.x);
+        inside ^= (p.xy[1] > py) != (p_next.xy[1] > py)
+            && p_next.xy[1] != p.xy[1]
+            && (px
+                < (p_next.xy[0] - p.xy[0]) * (py - p.xy[1]) / (p_next.xy[1] - p.xy[1]) + p.xy[0]);
         p = p_next;
         if ptr::eq(p, a) {
             return inside;
@@ -831,12 +865,17 @@ fn find_hole_bridge<T: Float>(
     let mut p = node!(nodes, p_i);
     loop {
         let p_next = node!(nodes, p.next_i);
-        if hole.y <= p.y && hole.y >= p_next.y && p_next.y != p.y {
-            let x = p.x + (hole.y - p.y) * (p_next.x - p.x) / (p_next.y - p.y);
-            if x <= hole.x && x > qx {
+        if hole.xy[1] <= p.xy[1] && hole.xy[1] >= p_next.xy[1] && p_next.xy[1] != p.xy[1] {
+            let x = p.xy[0]
+                + (hole.xy[1] - p.xy[1]) * (p_next.xy[0] - p.xy[0]) / (p_next.xy[1] - p.xy[1]);
+            if x <= hole.xy[0] && x > qx {
                 qx = x;
-                m_i = Some(if p.x < p_next.x { p_i } else { p.next_i });
-                if x == hole.x {
+                m_i = Some(if p.xy[0] < p_next.xy[0] {
+                    p_i
+                } else {
+                    p.next_i
+                });
+                if x == hole.xy[0] {
                     // hole touches outer segment; pick leftmost endpoint
                     return m_i;
                 }
@@ -856,31 +895,34 @@ fn find_hole_bridge<T: Float>(
     // otherwise choose the point of the minimum angle with the ray as connection point
 
     let stop_i = m_i;
-    let Node { x: mx, y: my, .. } = *node!(nodes, m_i); // must copy
+    let mut m = node!(nodes, m_i);
+    let mxmy = m.xy;
     let mut tan_min = T::infinity();
 
     p_i = m_i;
-    let mut p = node!(nodes, p_i);
-    let mut m = p;
+    let mut p = m;
 
     loop {
-        if (hole.x >= p.x && p.x >= mx && hole.x != p.x)
+        if (((hole.xy[0] >= p.xy[0]) & (p.xy[0] >= mxmy[0])) && hole.xy[0] != p.xy[0])
             && point_in_triangle(
-                if hole.y < my { hole.x } else { qx },
-                hole.y,
-                mx,
-                my,
-                if hole.y < my { qx } else { hole.x },
-                hole.y,
-                p.x,
-                p.y,
+                [
+                    if hole.xy[1] < mxmy[1] { hole.xy[0] } else { qx },
+                    hole.xy[1],
+                ],
+                mxmy,
+                [
+                    if hole.xy[1] < mxmy[1] { qx } else { hole.xy[0] },
+                    hole.xy[1],
+                ],
+                p.xy,
             )
         {
-            let tan = (hole.y - p.y).abs() / (hole.x - p.x);
+            let tan = (hole.xy[1] - p.xy[1]).abs() / (hole.xy[0] - p.xy[0]);
             if locally_inside(nodes, p, hole)
                 && (tan < tan_min
                     || (tan == tan_min
-                        && (p.x > m.x || (p.x == m.x && sector_contains_sector(nodes, m, p)))))
+                        && (p.xy[0] > m.xy[0]
+                            || (p.xy[0] == m.xy[0] && sector_contains_sector(nodes, m, p)))))
             {
                 (m_i, m) = (p_i, p);
                 tan_min = tan;
@@ -915,7 +957,7 @@ fn filter_points<T: Float>(
         let p_next = node!(nodes, p.next_i);
         if !p.steiner && (equals(p, p_next) || area(node!(nodes, p.prev_i), p, p_next) == T::zero())
         {
-            let (prev_i, next_i) = remove_node(nodes, p_i);
+            let (prev_i, next_i) = remove_node(nodes, p.link_info());
             (p_i, end_i) = (prev_i, prev_i);
             if p_i == next_i {
                 return end_i;
@@ -939,19 +981,20 @@ fn split_polygon<T: Float>(nodes: &mut Vec<Node<T>>, a_i: NodeIndex, b_i: NodeIn
     let b2_i = unsafe { NodeIndex::new_unchecked(nodes.len() as u32 + 1) };
 
     let a = node_mut!(nodes, a_i);
-    let mut a2 = Node::new(a.i, a.x, a.y);
+    let mut a2 = Node::new(a.i, a.xy);
     let an_i = a.next_i;
     a.next_i = b_i;
     a2.prev_i = b2_i;
     a2.next_i = an_i;
-    node_mut!(nodes, an_i).prev_i = a2_i;
 
     let b = node_mut!(nodes, b_i);
-    let mut b2 = Node::new(b.i, b.x, b.y);
+    let mut b2 = Node::new(b.i, b.xy);
     let bp_i = b.prev_i;
     b.prev_i = a_i;
     b2.next_i = a2_i;
     b2.prev_i = bp_i;
+
+    node_mut!(nodes, an_i).prev_i = a2_i;
     node_mut!(nodes, bp_i).next_i = b2_i;
 
     nodes.extend([a2, b2]);
@@ -963,11 +1006,10 @@ fn split_polygon<T: Float>(nodes: &mut Vec<Node<T>>, a_i: NodeIndex, b_i: NodeIn
 fn insert_node<T: Float>(
     nodes: &mut Vec<Node<T>>,
     i: u32,
-    x: T,
-    y: T,
+    xy: [T; 2],
     last: Option<NodeIndex>,
 ) -> NodeIndex {
-    let mut p = Node::new(i, x, y);
+    let mut p = Node::new(i, xy);
     let p_i = unsafe { NodeIndex::new_unchecked(nodes.len() as u32) };
     match last {
         Some(last_i) => {
@@ -985,23 +1027,28 @@ fn insert_node<T: Float>(
     p_i
 }
 
-fn remove_node<T: Float>(nodes: &mut [Node<T>], p_i: NodeIndex) -> (NodeIndex, NodeIndex) {
-    let p = node!(nodes, p_i);
-    let p_next_i = p.next_i;
-    let p_prev_i = p.prev_i;
-    let p_next_z_i = p.next_z_i;
-    let p_prev_z_i = p.prev_z_i;
-
-    node_mut!(nodes, p_next_i).prev_i = p_prev_i;
-    node_mut!(nodes, p_prev_i).next_i = p_next_i;
-
-    if let Some(prev_z_i) = p_prev_z_i {
-        node_mut!(nodes, prev_z_i).next_z_i = p_next_z_i;
+fn remove_node<T: Float>(nodes: &mut [Node<T>], pl: LinkInfo) -> (NodeIndex, NodeIndex) {
+    let prev = node_mut!(nodes, pl.prev_i);
+    prev.next_i = pl.next_i;
+    if let Some(prev_z_i) = pl.prev_z_i {
+        if prev_z_i == pl.prev_i {
+            prev.next_z_i = pl.next_z_i;
+        } else {
+            node_mut!(nodes, prev_z_i).next_z_i = pl.next_z_i;
+        }
     }
-    if let Some(next_z_i) = p_next_z_i {
-        node_mut!(nodes, next_z_i).prev_z_i = p_prev_z_i;
+
+    let next = node_mut!(nodes, pl.next_i);
+    next.prev_i = pl.prev_i;
+    if let Some(next_z_i) = pl.next_z_i {
+        if next_z_i == pl.next_i {
+            next.prev_z_i = pl.prev_z_i;
+        } else {
+            node_mut!(nodes, next_z_i).prev_z_i = pl.prev_z_i;
+        }
     }
-    (p_prev_i, p_next_i)
+
+    (pl.prev_i, pl.next_i)
 }
 
 /// Returns a percentage difference between the polygon area and its triangulation area;
@@ -1069,10 +1116,10 @@ fn signed_area<T: Float>(data: &[[T; 2]], start: usize, end: usize) -> T {
 }
 
 /// z-order of a point given coords and inverse of the longer side of data bbox
-fn z_order<T: Float>(x: T, y: T, min_x: T, min_y: T, inv_size: T) -> i32 {
+fn z_order<T: Float>(xy: [T; 2], min_x: T, min_y: T, inv_size: T) -> i32 {
     // coords are transformed into non-negative 15-bit integer range
-    let x = ((x - min_x) * inv_size).to_u32().unwrap();
-    let y = ((y - min_y) * inv_size).to_u32().unwrap();
+    let x = ((xy[0] - min_x) * inv_size).to_u32().unwrap();
+    let y = ((xy[1] - min_y) * inv_size).to_u32().unwrap();
     let mut xy = (x as i64) << 32 | y as i64;
     xy = (xy | (xy << 8)) & 0x00FF00FF00FF00FF;
     xy = (xy | (xy << 4)) & 0x0F0F0F0F0F0F0F0F;
@@ -1082,25 +1129,26 @@ fn z_order<T: Float>(x: T, y: T, min_x: T, min_y: T, inv_size: T) -> i32 {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn point_in_triangle<T: Float>(ax: T, ay: T, bx: T, by: T, cx: T, cy: T, px: T, py: T) -> bool {
-    (cx - px) * (ay - py) >= (ax - px) * (cy - py)
-        && (ax - px) * (by - py) >= (bx - px) * (ay - py)
-        && (bx - px) * (cy - py) >= (cx - px) * (by - py)
+fn point_in_triangle<T: Float>(a: [T; 2], b: [T; 2], c: [T; 2], p: [T; 2]) -> bool {
+    ((c[0] - p[0]) * (a[1] - p[1]) >= (a[0] - p[0]) * (c[1] - p[1]))
+        && ((a[0] - p[0]) * (b[1] - p[1]) >= (b[0] - p[0]) * (a[1] - p[1]))
+        && ((b[0] - p[0]) * (c[1] - p[1]) >= (c[0] - p[0]) * (b[1] - p[1]))
 }
 
 /// signed area of a triangle
 fn area<T: Float>(p: &Node<T>, q: &Node<T>, r: &Node<T>) -> T {
-    (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y)
+    (q.xy[1] - p.xy[1]) * (r.xy[0] - q.xy[0]) - (q.xy[0] - p.xy[0]) * (r.xy[1] - q.xy[1])
 }
 
 /// check if two points are equal
 fn equals<T: Float>(p1: &Node<T>, p2: &Node<T>) -> bool {
-    p1.x == p2.x && p1.y == p2.y
+    p1.xy == p2.xy
 }
 
 /// for collinear points p, q, r, check if point q lies on segment pr
 fn on_segment<T: Float>(p: &Node<T>, q: &Node<T>, r: &Node<T>) -> bool {
-    q.x <= p.x.max(r.x) && q.x >= p.x.min(r.x) && q.y <= p.y.max(r.y) && q.y >= p.y.max(r.y)
+    ((q.xy[0] <= p.xy[0].max(r.xy[0])) & (q.xy[1] <= p.xy[1].max(r.xy[1])))
+        && ((q.xy[0] >= p.xy[0].min(r.xy[0])) & (q.xy[1] >= p.xy[1].min(r.xy[1])))
 }
 
 fn sign<T: Float>(v: T) -> i32 {
