@@ -32,7 +32,8 @@ on Macbook Pro (M1 Pro)
 | water3        |   13.12 µs/i |        19.21 µs/i |      23.46 µs/i |
 | water3b       |   1.340 µs/i |        1.345 µs/i |      2.165 µs/i |
 | water4        |   81.48 µs/i |        110.6 µs/i |      154.1 µs/i |
-| water_huge    |   6.906 ms/i |        11.0k ms/i |      10.90 ms/i |
+| water_huge    |   6.906 ms/i |         11.0 ms/i |      10.90 ms/i |
 | water_huge2   |   15.38 ms/i |        23.60 ms/i |      22.35 ms/i |
 
-(Earcutr is not besed on the latest earcut.)
+(Earcutr 0.4.3 is not besed on the latest earcut.)
+
