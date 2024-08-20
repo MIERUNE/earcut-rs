@@ -24,9 +24,7 @@ fn load_fixture(name: &str, num_triangles: usize, expected_deviation: f64) {
     // earcut
     let mut triangles = vec![];
     let mut earcut = Earcut::new();
-    for _ in 0..500 {
-        earcut.earcut(vertices.iter().copied(), &hole_indices, &mut triangles);
-    }
+    earcut.earcut(vertices.iter().copied(), &hole_indices, &mut triangles);
 
     // check
     assert!(triangles.len() == num_triangles * 3);
