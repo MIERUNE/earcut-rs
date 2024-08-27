@@ -37,3 +37,8 @@ on Macbook Pro (M1 Pro)
 
 (Earcutr 0.4.3 is not besed on the latest earcut.)
 
+## Authors
+
+- MIERUNE Inc.
+- Taku Fukada ([@ciscorn](https://github.com/ciscorn)) - original author
+
