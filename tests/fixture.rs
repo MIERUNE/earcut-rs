@@ -27,7 +27,12 @@ fn test_fixture(name: &str, num_triangles: usize, expected_deviation: f64) {
     earcut.earcut(data.iter().copied(), &hole_indices, &mut triangles);
 
     // check
-    assert!(triangles.len() == num_triangles * 3);
+    assert!(
+        triangles.len() == num_triangles * 3,
+        "{} {}",
+        triangles.len(),
+        num_triangles * 3
+    );
     if !triangles.is_empty() {
         assert!(deviation(data.iter().copied(), &hole_indices, &triangles) <= expected_deviation);
     }
@@ -44,7 +49,7 @@ fn fixture_dude() {
 }
 
 #[test]
-fn fixture_water() {
+fn fixture_water1() {
     test_fixture("water", 2482, 0.0008);
 }
 
@@ -69,7 +74,7 @@ fn fixture_water4() {
 }
 
 #[test]
-fn fixture_water_huge() {
+fn fixture_water_huge1() {
     test_fixture("water-huge", 5177, 0.0011);
 }
 
