@@ -288,7 +288,7 @@ impl<T: Float> Earcut<T> {
         }
 
         self.queue
-            .sort_unstable_by(|(_a, ax), (_b, bx)| ax.partial_cmp(bx).unwrap_or(Ordering::Equal));
+            .sort_by(|(_a, ax), (_b, bx)| ax.partial_cmp(bx).unwrap_or(Ordering::Equal));
 
         // process holes from left to right
         for &(q, _) in &self.queue {
