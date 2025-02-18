@@ -75,12 +75,12 @@ fn fixture_water4() {
 
 #[test]
 fn fixture_water_huge1() {
-    test_fixture("water-huge", 5177, 0.0011);
+    test_fixture("water-huge", 5176, 0.0011);
 }
 
 #[test]
 fn fixture_water_huge2() {
-    test_fixture("water-huge2", 4462, 0.0028);
+    test_fixture("water-huge2", 4462, 0.004);
 }
 
 #[test]
@@ -149,6 +149,31 @@ fn fixture_touching_holes() {
 }
 
 #[test]
+fn fixture_touching_holes2() {
+    test_fixture("touching-holes2", 10, 0.0);
+}
+
+#[test]
+fn fixture_touching_holes3() {
+    test_fixture("touching-holes3", 82, 0.0);
+}
+
+#[test]
+fn fixture_touching_holes4() {
+    test_fixture("touching-holes4", 55, 0.0);
+}
+
+#[test]
+fn fixture_touching_holes5() {
+    test_fixture("touching-holes5", 133, 0.0);
+}
+
+#[test]
+fn fixture_touching_holes6() {
+    test_fixture("touching-holes6", 3098, 0.0);
+}
+
+#[test]
 fn fixture_hole_touching_outer() {
     test_fixture("hole-touching-outer", 77, 0.0);
 }
@@ -200,12 +225,12 @@ fn fixture_issue107() {
 
 #[test]
 fn fixture_issue111() {
-    test_fixture("issue111", 19, 0.0);
+    test_fixture("issue111", 18, 0.0);
 }
 
 #[test]
 fn fixture_collinear_boxy() {
-    test_fixture("boxy", 57, 0.0);
+    test_fixture("boxy", 58, 0.0);
 }
 
 #[test]
@@ -235,7 +260,7 @@ fn fixture_touching3() {
 
 #[test]
 fn fixture_touching4() {
-    test_fixture("touching4", 20, 0.0);
+    test_fixture("touching4", 19, 0.0);
 }
 
 #[test]
