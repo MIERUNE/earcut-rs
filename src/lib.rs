@@ -287,8 +287,28 @@ impl<T: Float> Earcut<T> {
             }
         }
 
-        self.queue
-            .sort_by(|(_a, ax), (_b, bx)| ax.partial_cmp(bx).unwrap_or(Ordering::Equal));
+        self.queue.sort_by(|(ai, ax), (bi, bx)| {
+            // compareXYSlope
+            match ax.partial_cmp(bx) {
+                Some(Ordering::Equal) => {}
+                Some(ordering) => return ordering,
+                None => return Ordering::Equal,
+            }
+            // when the left-most point of 2 holes meet at a vertex, sort the holes counterclockwise so that when we find
+            // the bridge to the outer shell is always the point that they meet at.
+            let a = node!(self.nodes, ai);
+            let b = node!(self.nodes, bi);
+            match a.xy[1].partial_cmp(&b.xy[1]) {
+                Some(Ordering::Equal) => {}
+                Some(ordering) => return ordering,
+                None => return Ordering::Equal,
+            };
+            let a_slope = (node!(self.nodes, a.next_i).xy[1] - a.xy[1])
+                / (node!(self.nodes, a.next_i).xy[0] - a.xy[0]);
+            let b_slope = (node!(self.nodes, b.next_i).xy[1] - b.xy[1])
+                / (node!(self.nodes, b.next_i).xy[0] - b.xy[0]);
+            a_slope.partial_cmp(&b_slope).unwrap_or(Ordering::Equal)
+        });
 
         // process holes from left to right
         for &(q, _) in &self.queue {
@@ -406,7 +426,7 @@ fn is_ear<'a, T: Float>(
     while !ptr::eq(p, a) {
         let p_next = node!(nodes, p.next_i);
         if (p.xy[0] >= x0 && p.xy[0] <= x1 && p.xy[1] >= y0 && p.xy[1] <= y1)
-            && point_in_triangle(a.xy, b.xy, c.xy, p.xy)
+            && point_in_triangle_except_first(a.xy, b.xy, c.xy, p.xy)
             && area(p_prev, p, p_next) >= T::zero()
         {
             return (false, a, c);
@@ -465,7 +485,7 @@ fn is_ear_hashed<'a, T: Float>(
             & (p.xy[1] >= xy_min[1])
             & (p.xy[1] <= xy_max[1]))
             && (!ptr::eq(p, a) && !ptr::eq(p, c))
-            && point_in_triangle(a.xy, b.xy, c.xy, p.xy)
+            && point_in_triangle_except_first(a.xy, b.xy, c.xy, p.xy)
             && area(node!(nodes, p.prev_i), p, node!(nodes, p.next_i)) >= T::zero()
         {
             return (false, a, c);
@@ -477,7 +497,7 @@ fn is_ear_hashed<'a, T: Float>(
             & (n.xy[1] >= xy_min[1])
             & (n.xy[1] <= xy_max[1]))
             && (!ptr::eq(n, a) && !ptr::eq(n, c))
-            && point_in_triangle(a.xy, b.xy, c.xy, n.xy)
+            && point_in_triangle_except_first(a.xy, b.xy, c.xy, n.xy)
             && area(node!(nodes, n.prev_i), n, node!(nodes, n.next_i)) >= T::zero()
         {
             return (false, a, c);
@@ -495,7 +515,7 @@ fn is_ear_hashed<'a, T: Float>(
             & (p.xy[1] >= xy_min[1])
             & (p.xy[1] <= xy_max[1]))
             && (!ptr::eq(p, a) && !ptr::eq(p, c))
-            && point_in_triangle(a.xy, b.xy, c.xy, p.xy)
+            && point_in_triangle_except_first(a.xy, b.xy, c.xy, p.xy)
             && area(node!(nodes, p.prev_i), p, node!(nodes, p.next_i)) >= T::zero()
         {
             return (false, a, c);
@@ -513,7 +533,7 @@ fn is_ear_hashed<'a, T: Float>(
             & (n.xy[1] >= xy_min[1])
             & (n.xy[1] <= xy_max[1]))
             && (!ptr::eq(n, a) && !ptr::eq(n, c))
-            && point_in_triangle(a.xy, b.xy, c.xy, n.xy)
+            && point_in_triangle_except_first(a.xy, b.xy, c.xy, n.xy)
             && area(node!(nodes, n.prev_i), n, node!(nodes, n.next_i)) >= T::zero()
         {
             return (false, a, c);
@@ -862,9 +882,16 @@ fn find_hole_bridge<T: Float>(
 
     // find a segment intersected by a ray from the hole's leftmost point to the left;
     // segment's endpoint with lesser x will be potential connection point
+    // unless they intersect at a vertex, then choose the vertex
     let mut p = node!(nodes, p_i);
+    if equals(hole, p) {
+        return Some(p_i);
+    }
     loop {
         let p_next = node!(nodes, p.next_i);
+        if equals(hole, p_next) {
+            return Some(p.next_i);
+        }
         if hole.xy[1] <= p.xy[1] && hole.xy[1] >= p_next.xy[1] && p_next.xy[1] != p.xy[1] {
             let x = p.xy[0]
                 + (hole.xy[1] - p.xy[1]) * (p_next.xy[0] - p.xy[0]) / (p_next.xy[1] - p.xy[1]);
@@ -1133,6 +1160,11 @@ fn point_in_triangle<T: Float>(a: [T; 2], b: [T; 2], c: [T; 2], p: [T; 2]) -> bo
     ((c[0] - p[0]) * (a[1] - p[1]) >= (a[0] - p[0]) * (c[1] - p[1]))
         && ((a[0] - p[0]) * (b[1] - p[1]) >= (b[0] - p[0]) * (a[1] - p[1]))
         && ((b[0] - p[0]) * (c[1] - p[1]) >= (c[0] - p[0]) * (b[1] - p[1]))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn point_in_triangle_except_first<T: Float>(a: [T; 2], b: [T; 2], c: [T; 2], p: [T; 2]) -> bool {
+    !(a[0] == p[0] && a[1] == p[1]) && point_in_triangle(a, b, c, p)
 }
 
 /// signed area of a triangle
