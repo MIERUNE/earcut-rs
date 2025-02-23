@@ -6,7 +6,7 @@
 
 A Rust port of the [mapbox/earcut](https://github.com/mapbox/earcut) polygon triangulation library, implemented from scratch with some reference to [donbright/earcutr](https://github.com/donbright/earcutr).
 
-- Based on the latest earcut 3.0.0 release.
+- Based on the latest earcut 3.0.1 release.
 - Designed to avoid unnecessary memory allocations. The internal buffer and output index vector can be reused across multiple triangulations.
 - (Experimental) An additional module, `utils3d`, can rotate 3D coplanar polygons into the 2D plane before triangulation.
 - License: ISC
