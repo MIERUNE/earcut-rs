@@ -1,12 +1,12 @@
 # earcut-rs
 
-[![Test](https://github.com/MIERUNE/earcut-rs/actions/workflows/Test.yml/badge.svg)](https://github.com/MIERUNE/earcut-rs/actions/workflows/Test.yml)
-[![codecov](https://codecov.io/gh/MIERUNE/earcut-rs/graph/badge.svg?token=thKlQiVjLc)](https://codecov.io/gh/MIERUNE/earcut-rs)
+[![Test](https://github.com/ciscorn/earcut-rs/actions/workflows/Test.yml/badge.svg)](https://github.com/ciscorn/earcut-rs/actions/workflows/Test.yml)
+[![codecov](https://codecov.io/gh/ciscorn/earcut-rs/graph/badge.svg?token=thKlQiVjLc)](https://codecov.io/gh/ciscorn/earcut-rs)
 [![Crates.io Version](https://img.shields.io/crates/v/earcut)](https://crates.io/crates/earcut)
 
 A Rust port of the [mapbox/earcut](https://github.com/mapbox/earcut) polygon triangulation library, implemented from scratch with some reference to [donbright/earcutr](https://github.com/donbright/earcutr).
 
-- Based on the latest earcut 3.0.0 release.
+- Based on the latest earcut 3.0.1 release.
 - Designed to avoid unnecessary memory allocations. The internal buffer and output index vector can be reused across multiple triangulations.
 - (Experimental) An additional module, `utils3d`, can rotate 3D coplanar polygons into the 2D plane before triangulation.
 - License: ISC
@@ -37,7 +37,7 @@ on Macbook Pro (M1 Pro)
 
 Note: Earcutr 0.4.3 is not besed on the latest earcut.
 
-## Authors
+## Author
 
-- Taku Fukada ([@ciscorn](https://github.com/ciscorn)) - original author
-- MIERUNE Inc.
+Taku Fukada ([@ciscorn](https://github.com/ciscorn))
+

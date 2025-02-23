@@ -1,11 +1,11 @@
 [package]
 name = "earcut"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2021"
 description = "A Rust port of the Earcut polygon triangulation library"
-authors = ["Taku Fukada <naninunenor@gmail.com>", "MIERUNE Inc. <info@mierune.co.jp>"]
+authors = ["Taku Fukada <naninunenor@gmail.com>"]
 license = "ISC"
-repository = "https://github.com/MIERUNE/earcut-rs"
+repository = "https://github.com/ciscorn/earcut-rs"
 categories = ["graphics", "science", "no-std"]
 
 [dependencies]
